@@ -37,12 +37,13 @@ Les fichiers historiques tennis-data.co.uk vont dans `data/raw/tennis-data/atp/A
 |---|---|
 | `tennisvalue build` | Recalcule tout : données, notes Elo et points, modèles, évaluation, backtest (≈ 40 s) |
 | `tennisvalue fetch-odds` | Relève les cotes ANJ + Pinnacle + Betfair Exchange (The Odds API) et les horodate |
+| `tennisvalue import-odds` | Ajoute à la base les relevés faits par GitHub Actions (après `git pull`) |
 | `tennisvalue scan` | Matchs à venir : probabilités, value, mise conseillée, facteurs clés, alertes |
 | `tennisvalue dashboard` | Tableau de bord dans le navigateur (matchs du jour, backtest, mes paris) |
 | `tennisvalue bet-add "Alcaraz - Sinner" "Carlos Alcaraz" winamax_fr 2.25 10 --p 0.46` | Enregistre un pari placé |
 | `tennisvalue bet-settle 1 gagne` | Règle un pari (`gagne`, `perdu`, `annule`) |
 | `tennisvalue bankroll` | Bilan : bankroll, yield, drawdown, CLV moyenne |
-| `pytest` | Lance les 23 tests (modèle de Markov, dé-margination, Kelly, absence de fuite de données…) |
+| `pytest` | Lance les 25 tests (modèle de Markov, dé-margination, Kelly, absence de fuite de données…) |
 
 **Routine conseillée** : `fetch-odds` plusieurs fois par jour (planificateur de tâches Windows ou `cron`), pour mesurer l'ouverture, les mouvements et la clôture ; `scan` avant de parier ; `bankroll` chaque semaine. Chaque semaine, retélécharger le fichier 2026 de tennis-data puis relancer `build` pour mettre les notes à jour.
 
@@ -61,12 +62,23 @@ Pour une tâche planifiée, préférer `config.yaml` (ligne `odds_api_key: "..."
 
 Coût : 5 relevés par jour × 2 crédits × nombre de tournois ouverts, soit environ 300 crédits par mois et par tournoi. Au-delà d'un tournoi ouvert, l'offre gratuite ne suffit plus : espacer les relevés ou passer à une offre payante. Le solde s'affiche dans le journal (« Crédits restants »).
 
+### Relevés automatiques avec GitHub Actions (ordinateur éteint)
+
+Le workflow `.github/workflows/fetch-odds.yml` lance `fetch-odds --export` aux mêmes heures (heure de Paris), même ordinateur éteint, puis ajoute chaque relevé au dépôt dans `data/snapshots/`. Il remplace la routine `cron` : ne pas utiliser les deux, sinon chaque créneau coûte deux fois des crédits.
+
+1. Sur GitHub : **Settings → Secrets and variables → Actions → New repository secret**, nom `ODDS_API_KEY`, valeur = la clé.
+2. Onglet **Actions → Relevé des cotes → Run workflow** pour un premier essai.
+3. Sur l'ordinateur, avant de parier : `git pull && .venv/bin/tennisvalue import-odds && .venv/bin/tennisvalue scan`
+
+GitHub peut retarder une exécution planifiée de quelques minutes, voire la sauter quand ses serveurs sont chargés.
+
 ## Architecture
 
 ```
 src/tennisvalue/
   ingest/tennisdata.py   lecture des fichiers historiques (résultats + cotes)
   ingest/oddsapi.py      cotes en direct (The Odds API), correspondance des noms de joueurs
+  ingest/snapshots.py    export / import des relevés partagés par git (GitHub Actions)
   ratings/elo.py         Elo global et par surface
   ratings/points.py      note de domination aux points
   models/markov.py       point -> jeu -> tie-break -> set -> match (+ distribution des scores)

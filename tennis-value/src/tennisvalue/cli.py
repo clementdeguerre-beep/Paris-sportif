@@ -45,22 +45,39 @@ def build():
 
 
 @app.command("fetch-odds")
-def fetch_odds(sport: str = typer.Option("", help="Clé de tournoi précise (sinon tous les tournois tennis actifs)")):
+def fetch_odds(sport: str = typer.Option("", help="Clé de tournoi précise (sinon tous les tournois tennis actifs)"),
+               export: bool = typer.Option(False, help="Écrit aussi le relevé en CSV dans data/snapshots (GitHub Actions)")):
     """Relève les cotes actuelles (ANJ + sharp) et les ajoute à l'historique horodaté."""
     from tennisvalue.ingest.oddsapi import OddsApiClient, parse_events
+    from tennisvalue.ingest.snapshots import export_snapshot
 
     s = load_settings()
     client = OddsApiClient(s.odds_api_key)
     keys = [sport] if sport else [x["key"] for x in client.tennis_sports()]
     con = db.connect(s.db_path)
-    total = 0
+    frames = []
     for k in keys:
         df = parse_events(client.odds(k, regions=s.odds_regions))
         if not df.empty:
             db.append_table(con, "odds_snapshots", df)
-            total += len(df)
+            frames.append(df)
     con.close()
+    total = sum(len(df) for df in frames)
+    if export and frames:
+        typer.echo(f"Relevé exporté : {export_snapshot(pd.concat(frames), s.snapshots_dir)}")
     typer.echo(f"{total} cotes enregistrées sur {len(keys)} tournoi(s). Crédits restants : {client.remaining}")
+
+
+@app.command("import-odds")
+def import_odds():
+    """Ajoute à la base les relevés de GitHub Actions récupérés par `git pull`."""
+    from tennisvalue.ingest.snapshots import import_snapshots
+
+    s = load_settings()
+    con = db.connect(s.db_path)
+    n = import_snapshots(con, s.snapshots_dir)
+    con.close()
+    typer.echo(f"{n} cotes importées depuis {s.snapshots_dir}.")
 
 
 @app.command()
@@ -78,7 +95,7 @@ def scan():
                     "Mettre à jour le fichier 2026 de tennis-data puis relancer `build`.", fg="yellow")
     res = run_scan(s)
     if res.empty:
-        typer.echo("Aucun relevé de cotes récent : lancer d'abord `fetch-odds`.")
+        typer.echo("Aucun relevé de cotes récent : lancer d'abord `fetch-odds` (ou `git pull` puis `import-odds`).")
         raise typer.Exit()
     con = db.connect(s.db_path)
     db.write_table(con, "predictions", res.assign(scanned_at=datetime.now()))

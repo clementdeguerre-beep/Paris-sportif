@@ -20,6 +20,7 @@ class Settings:
     raw_dir: Path = ROOT / "data" / "raw" / "tennis-data"
     models_dir: Path = ROOT / "data" / "models"
     reports_dir: Path = ROOT / "reports"
+    snapshots_dir: Path = ROOT / "data" / "snapshots"   # relevés exportés par GitHub Actions
 
     # Sélection des paris
     decision_source: str = "sharp"   # "sharp" (défaut, cf. backtest), "model" ou "confirmed"

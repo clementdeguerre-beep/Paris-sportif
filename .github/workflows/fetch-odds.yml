@@ -1,0 +1,47 @@
+# Relève les cotes toutes les 3 heures de 8 h à 20 h (heure de Paris) et les
+# ajoute au dépôt dans tennis-value/data/snapshots/. Sur l'ordinateur :
+#   git pull && .venv/bin/tennisvalue import-odds
+# Prérequis : secret ODDS_API_KEY (Settings > Secrets and variables > Actions).
+name: Relevé des cotes
+
+on:
+  schedule:
+    - cron: "7 8-20/3 * * *"
+      timezone: "Europe/Paris"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fetch-odds
+
+jobs:
+  fetch-odds:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: tennis-value
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: tennis-value/pyproject.toml
+      # Installation éditable : les chemins (data/snapshots…) restent relatifs au dépôt.
+      - run: pip install -e .
+      - name: Relevé
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+        run: tennisvalue fetch-odds --export
+      - name: Enregistrement dans le dépôt
+        run: |
+          if [ -z "$(git status --porcelain data/snapshots)" ]; then echo "Aucun nouveau relevé."; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/snapshots
+          git commit -m "Relevé des cotes $(date -u +%Y-%m-%dT%H:%MZ)"
+          git pull --rebase
+          git push
