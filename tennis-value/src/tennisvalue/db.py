@@ -36,6 +36,9 @@ CREATE TABLE IF NOT EXISTS bets (
 def connect(path: Path) -> duckdb.DuckDBPyConnection:
     path.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(path))
+    # Les horodatages sont stockés en UTC : now()::TIMESTAMP doit l'être aussi,
+    # quel que soit le fuseau de l'ordinateur (sinon décalage d'1 à 2 h à Paris).
+    con.execute("SET TimeZone = 'UTC'")
     con.execute(SCHEMA)
     return con
 

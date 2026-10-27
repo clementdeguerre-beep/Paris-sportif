@@ -40,10 +40,14 @@ def recommended_stake(p: float, odds: float, bankroll: float, rules: StakingRule
     return stake if stake >= rules.min_stake else 0.0
 
 
-def scale_to_exposure(stakes: list[float], bankroll: float, rules: StakingRules = StakingRules()) -> list[float]:
-    """Réduit proportionnellement des mises simultanées si leur total dépasse le plafond d'exposition."""
+def scale_to_exposure(stakes: list[float], bankroll: float, rules: StakingRules = StakingRules(),
+                      open_total: float = 0.0) -> list[float]:
+    """Réduit proportionnellement des mises simultanées si leur total dépasse le plafond d'exposition.
+
+    `open_total` : mises déjà engagées sur des paris non réglés, qui comptent dans le plafond.
+    """
     total = sum(stakes)
-    cap = bankroll * rules.max_exposure_pct
+    cap = max(bankroll * rules.max_exposure_pct - open_total, 0.0)
     if total <= cap or total == 0:
         return stakes
     k = cap / total

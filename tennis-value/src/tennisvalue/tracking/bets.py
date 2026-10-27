@@ -32,13 +32,22 @@ def settle_bet(con, bet_id: int, result: str) -> None:
     con.execute("UPDATE bets SET status = ?, pnl = ? WHERE bet_id = ?", [result, pnl, bet_id])
 
 
+def delete_bet(con, bet_id: int) -> None:
+    """Supprime un pari saisi par erreur."""
+    con.execute("DELETE FROM bets WHERE bet_id = ?", [bet_id])
+
+
 def update_clv(con, sharp_books: tuple) -> int:
-    """Calcule la CLV des paris liés à un match suivi (event_id) dont la cote de clôture est connue."""
+    """Calcule la CLV des paris liés à un match suivi (event_id) dont la cote de clôture est connue.
+
+    Seulement une fois le match commencé : avant, le dernier relevé n'est pas encore la clôture.
+    """
     bets = db.read(con, "SELECT bet_id, event_id, selection, odds FROM bets WHERE event_id IS NOT NULL AND clv IS NULL")
     n = 0
     for b in bets.itertuples():
         snaps = db.read(con, """
             SELECT * FROM odds_snapshots WHERE event_id = ? AND fetched_at <= commence_time
+              AND commence_time <= now()::TIMESTAMP
             ORDER BY fetched_at""", [b.event_id])
         snaps = snaps[snaps["book"].isin(sharp_books)]
         if snaps.empty:

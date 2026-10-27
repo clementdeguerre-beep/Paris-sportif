@@ -46,9 +46,27 @@ class Settings:
     stale_gap_pp: float = 2.5        # cote en retard : écart >= 2,5 pts avec la proba sharp
 
 
+def config_path() -> Path:
+    """config.yaml à la racine, ou le fichier désigné par TENNISVALUE_CONFIG."""
+    return Path(os.environ.get("TENNISVALUE_CONFIG", ROOT / "config.yaml"))
+
+
+def save_settings(updates: dict, path: Path | None = None) -> None:
+    """Met à jour config.yaml avec `updates` (les autres paramètres, dont la clé API, sont conservés)."""
+    path = path or config_path()
+    data = (yaml.safe_load(path.read_text()) or {}) if path.exists() else {}
+    names = {f.name for f in fields(Settings)}
+    unknown = set(updates) - names
+    if unknown:
+        raise ValueError(f"Paramètres inconnus : {', '.join(sorted(unknown))}")
+    data.update(updates)
+    path.write_text("# Modifié depuis l'onglet Réglages de l'application (voir config.example.yaml).\n"
+                    + yaml.safe_dump(data, allow_unicode=True, sort_keys=False))
+
+
 def load_settings(path: Path | None = None) -> Settings:
     s = Settings()
-    path = path or ROOT / "config.yaml"
+    path = path or config_path()
     if path.exists():
         data = yaml.safe_load(path.read_text()) or {}
         names = {f.name for f in fields(Settings)}

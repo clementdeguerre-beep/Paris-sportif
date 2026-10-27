@@ -1,0 +1,13 @@
+# Lu quand l'application est lancée depuis la racine du projet (scripts/lancer.sh, tennisvalue dashboard).
+[server]
+headless = true
+port = 8501
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
+
+[theme]
+primaryColor = "#1F7A4D"

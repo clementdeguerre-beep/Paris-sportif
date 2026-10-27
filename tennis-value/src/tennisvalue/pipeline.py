@@ -153,6 +153,25 @@ def backtest(feats: pd.DataFrame, settings: Settings, log=print) -> dict:
     return {"summary": res["summary"], "details": details}
 
 
+def build_all(settings: Settings, log=print) -> dict:
+    """`tennisvalue build` : données, modèles, évaluation, backtest, puis rapports dans reports/."""
+    feats = build(settings, log)
+    ev = evaluate(feats)
+    info = information_test(feats)
+    bt = backtest(feats, settings, log)
+    settings.reports_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "genere_le": datetime.now().isoformat(timespec="minutes"),
+        "evaluation": ev, "test_information": info, "backtest": bt["summary"],
+        "details": {k: {"breakdown": v["breakdown"],
+                        "kelly": {kk: vv for kk, vv in v["kelly"].items()}} for k, v in bt["details"].items()},
+    }
+    (settings.reports_dir / "backtest.json").write_text(json.dumps(to_jsonable(payload), ensure_ascii=False, indent=1))
+    with open(settings.reports_dir / "backtest_details.pkl", "wb") as fh:
+        pickle.dump(bt["details"], fh)
+    return {"evaluation": ev, "backtest": bt}
+
+
 def to_jsonable(obj):
     if isinstance(obj, pd.DataFrame):
         return json.loads(obj.to_json(orient="records", date_format="iso"))

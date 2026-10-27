@@ -70,8 +70,9 @@ def latest_snapshots(con) -> pd.DataFrame:
     """)
 
 
-def scan(settings: Settings, snaps: pd.DataFrame | None = None, now: datetime | None = None) -> pd.DataFrame:
-    live = load_live(settings)
+def scan(settings: Settings, snaps: pd.DataFrame | None = None, now: datetime | None = None,
+         live: dict | None = None) -> pd.DataFrame:
+    live = live or load_live(settings)
     con = db.connect(settings.db_path)
     snaps = latest_snapshots(con) if snaps is None else snaps
     con.close()

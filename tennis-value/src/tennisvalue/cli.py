@@ -1,8 +1,6 @@
 """Ligne de commande : `tennisvalue <commande>` (ou `python -m tennisvalue.cli <commande>`)."""
 from __future__ import annotations
 
-import json
-import pickle
 import subprocess
 import sys
 from datetime import date, datetime
@@ -22,20 +20,8 @@ pd.set_option("display.max_columns", 30)
 def build():
     """Recalcule tout : données, notes, modèles, évaluation et backtest (≈ 1 min)."""
     s = load_settings()
-    feats = pipeline.build(s)
-    ev = pipeline.evaluate(feats)
-    info = pipeline.information_test(feats)
-    bt = pipeline.backtest(feats, s)
-    s.reports_dir.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "genere_le": datetime.now().isoformat(timespec="minutes"),
-        "evaluation": ev, "test_information": info, "backtest": bt["summary"],
-        "details": {k: {"breakdown": v["breakdown"],
-                        "kelly": {kk: vv for kk, vv in v["kelly"].items()}} for k, v in bt["details"].items()},
-    }
-    (s.reports_dir / "backtest.json").write_text(json.dumps(pipeline.to_jsonable(payload), ensure_ascii=False, indent=1))
-    with open(s.reports_dir / "backtest_details.pkl", "wb") as fh:
-        pickle.dump(bt["details"], fh)
+    res = pipeline.build_all(s)
+    ev, bt = res["evaluation"], res["backtest"]
     typer.echo("\nQualité des probabilités (saisons 2019-2026, mêmes matchs) :")
     typer.echo(ev["scores"].round(4).to_string(index=False))
     cols = ["strategie", "book", "seuil", "n_paris", "yield", "ic95_bas", "ic95_haut", "clv_proxy"]
@@ -48,24 +34,12 @@ def build():
 def fetch_odds(sport: str = typer.Option("", help="Clé de tournoi précise (sinon tous les tournois tennis actifs)"),
                export: bool = typer.Option(False, help="Écrit aussi le relevé en CSV dans data/snapshots (GitHub Actions)")):
     """Relève les cotes actuelles (ANJ + sharp) et les ajoute à l'historique horodaté."""
-    from tennisvalue.ingest.oddsapi import OddsApiClient, parse_events
-    from tennisvalue.ingest.snapshots import export_snapshot
+    from tennisvalue.sync import fetch_local
 
-    s = load_settings()
-    client = OddsApiClient(s.odds_api_key)
-    keys = [sport] if sport else [x["key"] for x in client.tennis_sports()]
-    con = db.connect(s.db_path)
-    frames = []
-    for k in keys:
-        df = parse_events(client.odds(k, regions=s.odds_regions))
-        if not df.empty:
-            db.append_table(con, "odds_snapshots", df)
-            frames.append(df)
-    con.close()
-    total = sum(len(df) for df in frames)
-    if export and frames:
-        typer.echo(f"Relevé exporté : {export_snapshot(pd.concat(frames), s.snapshots_dir)}")
-    typer.echo(f"{total} cotes enregistrées sur {len(keys)} tournoi(s). Crédits restants : {client.remaining}")
+    r = fetch_local(load_settings(), sport=sport or None, export=export)
+    if r["export"]:
+        typer.echo(f"Relevé exporté : {r['export']}")
+    typer.echo(f"{r['n']} cotes enregistrées sur {r['n_tournois']} tournoi(s). Crédits restants : {r['remaining']}")
 
 
 @app.command("import-odds")
@@ -162,7 +136,8 @@ def bankroll():
 @app.command()
 def dashboard():
     """Ouvre le tableau de bord dans le navigateur."""
-    subprocess.run([sys.executable, "-m", "streamlit", "run", str(ROOT / "dashboard" / "app.py")], check=False)
+    # Depuis la racine du projet, pour lire .streamlit/config.toml.
+    subprocess.run([sys.executable, "-m", "streamlit", "run", str(ROOT / "dashboard" / "app.py")], check=False, cwd=ROOT)
 
 
 if __name__ == "__main__":

@@ -31,7 +31,20 @@ cp config.example.yaml config.yaml # puis adapter bankroll, seuils, clé API
 
 Les fichiers historiques tennis-data.co.uk vont dans `data/raw/tennis-data/atp/AAAA.xlsx` et `data/raw/tennis-data/wta/AAAA.xlsx`. Ceux que tu m'as fournis (2016 → 2026) y sont déjà.
 
-## Utilisation
+## L'application
+
+Tout se fait depuis l'application, sans terminal : icône **Tennis Value** dans le lanceur (Chromebook, créée par `scripts/install_chromebook.sh`), `scripts/lancer.sh` ou `tennisvalue dashboard`. Elle s'ouvre dans le navigateur (http://localhost:8501).
+
+| Page | Contenu |
+|---|---|
+| **Paris du jour** | Paris conseillés en cartes (joueur, cote, bookmaker, mise, value, chance de gagner, alerte de mouvement brusque), bouton **J'ai placé ce pari** qui pré-remplit cote et mise et prévient si la cote a trop baissé ; tableau de tous les matchs à venir |
+| **Mes paris** | Bankroll, yield, CLV ; paris en attente réglés en un clic (Gagné / Perdu / Annulé, suppression d'une erreur) ; courbe de bankroll ; historique ; ajout à la main |
+| **Analyse** | Modèle contre marché et backtest des stratégies |
+| **Réglages** | Bankroll, prudence des mises, plafonds, value minimale, cotes min/max, source de décision (écrits dans `config.yaml`) ; recalcul du modèle |
+
+Barre de gauche : âge du dernier relevé, **Mettre à jour** (récupère les relevés et résultats de GitHub), **Relever les cotes maintenant** (clé locale, ou relevé lancé sur GitHub via GitHub CLI), **Recalculer le modèle** quand de nouveaux résultats sont arrivés. Heures affichées à l'heure de Paris. Les mises conseillées sont arrondies à 0,50 € et réduites si le total en jeu (paris en cours compris) dépasse le plafond d'exposition.
+
+## Ligne de commande
 
 | Commande | Rôle |
 |---|---|
@@ -39,13 +52,13 @@ Les fichiers historiques tennis-data.co.uk vont dans `data/raw/tennis-data/atp/A
 | `tennisvalue fetch-odds` | Relève les cotes ANJ + Pinnacle + Betfair Exchange (The Odds API) et les horodate |
 | `tennisvalue import-odds` | Ajoute à la base les relevés faits par GitHub Actions (après `git pull`) |
 | `tennisvalue scan` | Matchs à venir : probabilités, value, mise conseillée, facteurs clés, alertes |
-| `tennisvalue dashboard` | Tableau de bord dans le navigateur (matchs du jour, backtest, mes paris) |
+| `tennisvalue dashboard` | Ouvre l'application dans le navigateur |
 | `tennisvalue bet-add "Alcaraz - Sinner" "Carlos Alcaraz" winamax_fr 2.25 10 --p 0.46` | Enregistre un pari placé |
 | `tennisvalue bet-settle 1 gagne` | Règle un pari (`gagne`, `perdu`, `annule`) |
 | `tennisvalue bankroll` | Bilan : bankroll, yield, drawdown, CLV moyenne |
-| `pytest` | Lance les 25 tests (modèle de Markov, dé-margination, Kelly, absence de fuite de données…) |
+| `pytest` | Lance les 34 tests (modèle de Markov, dé-margination, Kelly, absence de fuite de données, pages de l'application…) |
 
-**Routine conseillée** : `fetch-odds` plusieurs fois par jour (planificateur de tâches Windows ou `cron`), pour mesurer l'ouverture, les mouvements et la clôture ; `scan` avant de parier ; `bankroll` chaque semaine. Chaque semaine, retélécharger le fichier 2026 de tennis-data puis relancer `build` pour mettre les notes à jour.
+**Routine conseillée** : `fetch-odds` plusieurs fois par jour (planificateur de tâches Windows ou `cron`), pour mesurer l'ouverture, les mouvements et la clôture ; `scan` avant de parier ; `bankroll` chaque semaine. Chaque semaine, retélécharger le fichier 2026 de tennis-data puis relancer `build` pour mettre les notes à jour (automatique avec GitHub Actions, voir plus bas).
 
 ### Clé The Odds API
 
@@ -66,7 +79,9 @@ Coût : 5 relevés par jour × 2 crédits × nombre de tournois ouverts, soit en
 
 Le workflow `.github/workflows/fetch-odds.yml` lance `fetch-odds --export` aux mêmes heures (heure de Paris), même ordinateur éteint, puis ajoute chaque relevé au dépôt dans `data/snapshots/`. Il remplace la routine `cron` : ne pas utiliser les deux, sinon chaque créneau coûte deux fois des crédits.
 
-**En une commande (Chromebook avec Linux activé, Debian, Ubuntu)** : installe le projet dans `~/Paris-sportif`, lance `build`, enregistre la clé comme secret GitHub et lance un premier relevé.
+Le workflow `.github/workflows/update-results.yml` télécharge chaque lundi matin les résultats de la saison sur tennis-data.co.uk ; l'application propose ensuite **Recalculer le modèle**.
+
+**En une commande (Chromebook avec Linux activé, Debian, Ubuntu)** : installe le projet dans `~/Paris-sportif`, lance `build`, ajoute l'icône Tennis Value au lanceur, enregistre la clé comme secret GitHub, lance un premier relevé puis ouvre l'application.
 
 ```bash
 sudo apt-get update && sudo apt-get install -y curl && bash <(curl -fsSL https://raw.githubusercontent.com/clementdeguerre-beep/Paris-sportif/claude/zealous-sagan-qzgjyg/tennis-value/scripts/install_chromebook.sh)
@@ -77,7 +92,7 @@ sudo apt-get update && sudo apt-get install -y curl && bash <(curl -fsSL https:/
 1. Sur GitHub : **Settings → Secrets and variables → Actions → New repository secret**, nom `ODDS_API_KEY`, valeur = la clé.
 2. Onglet **Actions → Relevé des cotes → Run workflow** pour un premier essai.
 
-Ensuite, avant de parier : `scripts/sync.sh` (`git pull`, `import-odds` puis `scan`).
+Ensuite, avant de parier : bouton **Mettre à jour** de l'application, ou `scripts/sync.sh` (`git pull`, `import-odds` puis `scan`).
 
 GitHub peut retarder une exécution planifiée de quelques minutes, voire la sauter quand ses serveurs sont chargés.
 
@@ -99,8 +114,12 @@ src/tennisvalue/
   backtest/              stratégies, métriques, IC bootstrap, simulation de bankroll
   tracking/bets.py       suivi des paris réels
   scan.py                scanner des matchs à venir
+  sync.py                relevé local ou sur GitHub, git pull, état des données
   pipeline.py, cli.py    chaîne complète et ligne de commande
-dashboard/app.py         tableau de bord (Streamlit)
+dashboard/app.py         application (Streamlit) : navigation et barre latérale
+dashboard/commun.py      formats à la française, données en cache, boutons de mise à jour
+dashboard/vues/          pages Paris du jour, Mes paris, Analyse, Réglages
+scripts/                 installation Chromebook, lanceur, synchro, routine cron
 data/tennis.duckdb       base locale (créée par build)
 ```
 
