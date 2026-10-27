@@ -66,9 +66,18 @@ Coût : 5 relevés par jour × 2 crédits × nombre de tournois ouverts, soit en
 
 Le workflow `.github/workflows/fetch-odds.yml` lance `fetch-odds --export` aux mêmes heures (heure de Paris), même ordinateur éteint, puis ajoute chaque relevé au dépôt dans `data/snapshots/`. Il remplace la routine `cron` : ne pas utiliser les deux, sinon chaque créneau coûte deux fois des crédits.
 
+**En une commande (Chromebook avec Linux activé, Debian, Ubuntu)** : installe le projet dans `~/Paris-sportif`, lance `build`, enregistre la clé comme secret GitHub et lance un premier relevé.
+
+```bash
+sudo apt-get update && sudo apt-get install -y curl && bash <(curl -fsSL https://raw.githubusercontent.com/clementdeguerre-beep/Paris-sportif/claude/zealous-sagan-qzgjyg/tennis-value/scripts/install_chromebook.sh)
+```
+
+**À la main** :
+
 1. Sur GitHub : **Settings → Secrets and variables → Actions → New repository secret**, nom `ODDS_API_KEY`, valeur = la clé.
 2. Onglet **Actions → Relevé des cotes → Run workflow** pour un premier essai.
-3. Sur l'ordinateur, avant de parier : `git pull && .venv/bin/tennisvalue import-odds && .venv/bin/tennisvalue scan`
+
+Ensuite, avant de parier : `scripts/sync.sh` (`git pull`, `import-odds` puis `scan`).
 
 GitHub peut retarder une exécution planifiée de quelques minutes, voire la sauter quand ses serveurs sont chargés.
 
