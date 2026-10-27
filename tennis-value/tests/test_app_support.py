@@ -1,3 +1,4 @@
+import io
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
@@ -5,7 +6,8 @@ import pytest
 import yaml
 
 from tennisvalue import db, sync
-from tennisvalue.config import Settings, load_settings, save_settings
+from tennisvalue.config import ROOT, Settings, load_settings, save_settings
+from tennisvalue.ingest.tennisdata import save_results_file
 from tennisvalue.market.devig import fair_two_way
 from tennisvalue.market.staking import StakingRules, scale_to_exposure
 from tennisvalue.tracking.bets import add_bet, delete_bet, update_clv
@@ -84,3 +86,22 @@ def test_status(tmp_path):
     con.close()
     st = sync.status(s)
     assert st["last_fetch"] == now and st["upcoming"] == 1
+
+
+
+def test_save_results_file(tmp_path):
+    src = ROOT / "data/raw/tennis-data/wta"
+    content = (src / "2020.xlsx").read_bytes()
+    r = save_results_file(content, tmp_path)
+    assert (r["tour"], r["season"], r["before"]) == ("WTA", 2020, 0) and r["n"] > 500
+    assert (tmp_path / "wta/2020.xlsx").read_bytes() == content
+    assert save_results_file(content, tmp_path)["before"] == r["n"]          # même fichier : accepté
+    # Plus court que le fichier en place (ici la saison 2019, plus longue) : refusé.
+    (tmp_path / "wta/2020.xlsx").write_bytes((src / "2019.xlsx").read_bytes())
+    with pytest.raises(ValueError, match="rien n'est remplacé"):
+        save_results_file(content, tmp_path)
+    assert [f.name for f in (tmp_path / "wta").iterdir()] == ["2020.xlsx"]  # pas de fichier .part
+    buf = io.BytesIO()
+    pd.DataFrame({"a": [1]}).to_excel(buf, index=False)
+    with pytest.raises(ValueError, match="pas un fichier de résultats"):
+        save_results_file(buf.getvalue(), tmp_path)

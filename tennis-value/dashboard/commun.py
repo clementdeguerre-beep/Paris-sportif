@@ -186,15 +186,15 @@ def fetch_now(s: Settings) -> None:
     st.rerun()
 
 
-def rebuild(s: Settings) -> None:
-    """Recalcule le modèle (même chose que `tennisvalue build`)."""
+def rebuild(s: Settings, done: str = "Modèle recalculé avec les derniers résultats.") -> None:
+    """Recalcule le modèle (même chose que `tennisvalue build`) ; `done` s'affiche à la fin."""
     from tennisvalue import pipeline
 
     with st.status("Recalcul du modèle (1 à 3 minutes)…", expanded=True) as box:
         pipeline.build_all(s, log=box.write)
         box.update(label="Modèle recalculé", state="complete")
     clear_caches(model=True)
-    flash("Modèle recalculé avec les derniers résultats.")
+    flash(done)
     st.rerun()
 
 

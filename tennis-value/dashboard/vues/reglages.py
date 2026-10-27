@@ -1,6 +1,7 @@
 """Réglages : bankroll, prudence des mises, sélection des paris (écrits dans config.yaml), données et modèle."""
 from __future__ import annotations
 
+import pandas as pd
 import streamlit as st
 
 import commun as c
@@ -63,13 +64,33 @@ with st.form("reglages"):
 st.subheader("Données et modèle")
 if stt["model_ready"]:
     live = c.live_model(s, stt["model_built"])
-    st.markdown(f"- Résultats de matchs jusqu'au **{live['data_until'][8:10]}/{live['data_until'][5:7]}/{live['data_until'][:4]}**\n"
-                f"- Modèle calculé le **{c.local(stt['model_built']):%d/%m/%Y à %H:%M}**")
+    lines = [f"- Résultats de matchs jusqu'au **{pd.Timestamp(live['data_until']):%d/%m/%Y}**",
+             f"- Modèle calculé le **{c.local(stt['model_built']):%d/%m/%Y à %H:%M}**"]
 else:
-    st.markdown("- Modèle pas encore calculé")
-st.markdown(f"- Dernier relevé de cotes : **{c.ago(stt['last_fetch']) if stt['last_fetch'] is not None else 'aucun'}**")
+    lines = ["- Modèle pas encore calculé"]
+lines.append(f"- Dernier relevé de cotes : **{c.ago(stt['last_fetch']) if stt['last_fetch'] is not None else 'aucun'}**")
+st.markdown("\n".join(lines))
 if st.button("🧮 Recalculer le modèle", help="Après de nouveaux résultats de matchs (1 à 3 minutes)."):
     c.rebuild(s)
+
+st.subheader("Nouveaux résultats de matchs")
+st.markdown("Une fois par semaine : sur [tennis-data.co.uk](http://www.tennis-data.co.uk/alldata.php), télécharger les "
+            "fichiers Excel de la saison en cours (hommes et femmes), puis les déposer ici. Le modèle est ensuite recalculé.")
+files = st.file_uploader("Fichiers .xlsx de tennis-data", type="xlsx", accept_multiple_files=True)
+if files and st.button("📥 Ajouter ces résultats et recalculer", type="primary"):
+    from tennisvalue.ingest.tennisdata import save_results_file
+
+    saved = []
+    for f in files:
+        try:
+            r = save_results_file(f.getvalue(), s.raw_dir)
+        except Exception as e:  # fichier illisible, autre site, saison plus courte…
+            st.error(f"{f.name} : {e}")
+            continue
+        saved.append(f"{r['tour']} {r['season']} : {c.num(r['n'], 0)} matchs (avant {c.num(r['before'], 0)})")
+        st.success(saved[-1])
+    if saved:
+        c.rebuild(s, " ; ".join(saved) + ". Modèle recalculé.")
 
 st.subheader("Relevés automatiques")
 st.markdown("GitHub relève les cotes à **8 h, 11 h, 14 h, 17 h et 20 h** (heure de Paris), même ordinateur éteint. "

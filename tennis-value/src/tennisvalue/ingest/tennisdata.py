@@ -17,6 +17,7 @@ Les fichiers sont placés dans data/raw/tennis-data/{atp,wta}/AAAA.xlsx.
 from __future__ import annotations
 
 import hashlib
+import io
 import re
 import unicodedata
 from pathlib import Path
@@ -94,6 +95,32 @@ def read_file(path: Path, tour: str) -> pd.DataFrame:
             df[f"odds_{key}_{s}"] = v.where(v > 1.0)
     df["file_row"] = np.arange(len(df))
     return df
+
+
+def save_results_file(content: bytes, raw_dir: Path) -> dict:
+    """Range un fichier téléchargé sur tennis-data dans raw_dir/{atp,wta}/AAAA.xlsx.
+
+    Circuit reconnu à la 1re colonne (« ATP » ou « WTA »), saison = année la plus
+    fréquente des dates. Refuse un fichier illisible ou plus court que celui en place.
+    """
+    raw = pd.read_excel(io.BytesIO(content), nrows=5000)
+    tour = next((t for t in ("ATP", "WTA") if t in raw.columns), None)
+    if tour is None or "Date" not in raw.columns:
+        raise ValueError("ce n'est pas un fichier de résultats tennis-data (colonne ATP ou WTA absente)")
+    season = int(pd.to_datetime(raw["Date"], errors="coerce").dt.year.mode()[0])
+    path = raw_dir / tour.lower() / f"{season}.xlsx"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{season}.xlsx.part")
+    tmp.write_bytes(content)
+    try:
+        n = len(read_file(tmp, tour))
+        before = len(read_file(path, tour)) if path.exists() else 0
+        if n < before:
+            raise ValueError(f"{n} matchs contre {before} dans le fichier déjà présent : rien n'est remplacé")
+        tmp.replace(path)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return {"tour": tour, "season": season, "n": n, "before": before}
 
 
 def match_id(row) -> str:

@@ -25,7 +25,7 @@ pred = c.upcoming_predictions(s, stt)
 data_until = pd.Timestamp(c.live_model(s, stt["model_built"])["data_until"])
 if (pd.Timestamp.now().normalize() - data_until).days > 10:
     st.warning(f"Résultats de matchs arrêtés au {data_until:%d/%m/%Y} : les avis du modèle ne tiennent pas compte "
-               "des derniers matchs. Ils se mettent à jour chaque lundi (🔄 Mettre à jour, puis Recalculer le modèle).")
+               "des derniers matchs. Ajouter les nouveaux résultats dans ⚙️ Réglages.")
 if pred.empty:
     st.info("Aucun match à venir dans les relevés de cotes. Clique sur **🔄 Mettre à jour** à gauche ; "
             "s'il n'y a toujours rien, aucun tournoi ATP / WTA couvert n'est ouvert aux paris en ce moment.")
