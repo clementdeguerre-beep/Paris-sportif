@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.egg-info/
+data/tennis.duckdb*
+data/models/
+reports/
+config.yaml
+logs/

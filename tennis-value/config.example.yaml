@@ -1,0 +1,25 @@
+# Copier ce fichier en config.yaml et l'adapter. Tous les paramètres sont facultatifs.
+
+# Proba utilisée pour décider d'un pari :
+#   sharp     = proba sans marge de Pinnacle / Betfair Exchange (défaut, recommandé par le backtest)
+#   model     = proba du modèle seul (déconseillé : perdant sur toutes les saisons testées)
+#   confirmed = value exigée à la fois selon le sharp et selon le modèle
+decision_source: sharp
+min_ev: 0.03          # value minimale (3 %)
+min_odds: 1.30
+max_odds: 5.00
+
+# Bankroll et mises
+bankroll: 1000        # en euros
+kelly_multiplier: 0.25
+max_stake_pct: 0.02
+max_exposure_pct: 0.10
+
+# The Odds API : mettre la clé ici ou dans la variable d'environnement ODDS_API_KEY
+# odds_api_key: "VOTRE_CLE"
+odds_regions: "fr,eu"
+
+# Alertes
+steam_move_pp: 3.0
+steam_window_min: 60
+stale_gap_pp: 2.5
