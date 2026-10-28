@@ -38,7 +38,7 @@ Tout se fait depuis l'application, sans terminal : icône **Tennis Value** dans 
 | Page | Contenu |
 |---|---|
 | **Matchs** | Matchs à venir par tournoi. Pour chaque joueur, bouton de cote avec la meilleure cote française, le bookmaker et ▲ ▼ depuis l'ouverture ; indicateur de **flux** (vers quel joueur va l'argent, et d'où il vient) ; badge VALUE sur les paris conseillés. Un clic sur le match ouvre le détail : **évolution des cotes de chaque bookmaker**, **évolution du flux** (consensus français contre Pinnacle / Betfair), tableau des cotes par bookmaker, avis du modèle. |
-| **Tendances** | « Où va l'argent » : joueurs dont la chance estimée a le plus monté, depuis l'ouverture, sur 24 h ou 6 h, avec l'origine du mouvement et une mini-courbe. |
+| **Tendances** | « Où va l'argent » : **argent réel** misé sur Polymarket (part de l'argent, montant, gros paris) ou **mouvements de cotes** des bookmakers (origine du mouvement), depuis l'ouverture, sur 24 h ou 6 h, avec une mini-courbe. |
 | **Mon pari** (à droite) | Un clic sur une cote prépare le pari : choix du bookmaker, cote obtenue, mise conseillée (Kelly fractionné, plafonds), value à cette cote, gain potentiel ; **J'ai placé ce pari** l'enregistre (CLV automatique). L'application ne place aucun pari. |
 | **Mes paris** | Bankroll, bénéfice, yield, CLV, en jeu ; paris en attente réglés en un clic ; courbe de bankroll ; historique ; ajout à la main. |
 | **Analyse** | Modèle contre marché et backtest des stratégies. |
@@ -53,7 +53,17 @@ Les bookmakers ne publient pas les montants misés sur chaque joueur. Le flux es
 - **Contradictoire** : français et sharp bougent en sens opposés.
 - **Stable** : moins d'un point de mouvement.
 
-La mesure dépend de la fréquence des relevés : 5 par jour suffisent pour suivre une tendance, pas pour saisir les mouvements de la dernière heure (un relevé toutes les 30 à 60 minutes demande une offre payante de The Odds API).
+La mesure dépend de la fréquence des relevés : 5 par jour suffisent pour suivre une tendance, pas pour saisir les mouvements de la dernière heure (un relevé toutes les 30 à 60 minutes demande une offre payante de The Odds API). Les relevés ne demandent que 7 bookmakers (Winamax, Betclic, Unibet, PMU, NetBet, Pinnacle, Betfair Exchange : réglage `odds_bookmakers`) : 1 crédit par tournoi ouvert et par relevé.
+
+### Argent réel : Polymarket
+
+Polymarket est un marché de prédiction (partenaire officiel de l'ATP depuis août 2026) où **chaque transaction est publique** : joueur, achat ou vente, montant, heure. On y lit donc de vrais flux d'argent, pas une estimation. À chaque relevé, GitHub Actions lit gratuitement ses API publiques (`ingest/polymarket.py`, sans compte ni clé) pour les matchs ATP (Challengers compris) et WTA : prix, volumes, liquidité, et toutes les transactions et le prix horaire depuis le relevé précédent. Les matchs sont rapprochés de ceux des bookmakers par les noms des joueurs et l'heure (`market/money.py`).
+
+- **Part de l'argent** d'un joueur = achats de ce joueur + ventes de son adversaire, rapportés au total échangé (depuis l'ouverture, sur 24 h ou 6 h).
+- **Argent net cumulé** : courbe qui monte quand l'argent va sur le joueur 1, descend quand il va sur le joueur 2.
+- **Gros paris** : transactions d'au moins 500 $.
+
+Les volumes vont de quelques centaines à plus de 100 000 $ par match : sur un petit marché, quelques gros paris font basculer la part. **Polymarket n'est pas autorisé en France** : ses données publiques sont lues pour l'analyse, on n'y parie pas.
 
 ## Ligne de commande
 
@@ -62,12 +72,13 @@ La mesure dépend de la fréquence des relevés : 5 par jour suffisent pour suiv
 | `tennisvalue build` | Recalcule tout : données, notes Elo et points, modèles, évaluation, backtest (≈ 40 s) |
 | `tennisvalue fetch-odds` | Relève les cotes ANJ + Pinnacle + Betfair Exchange (The Odds API) et les horodate |
 | `tennisvalue import-odds` | Ajoute à la base les relevés faits par GitHub Actions (après `git pull`) |
+| `tennisvalue fetch-polymarket` | Relève les matchs Polymarket (gratuit) ; `import-polymarket` ajoute ceux de GitHub Actions |
 | `tennisvalue scan` | Matchs à venir : probabilités, value, mise conseillée, facteurs clés, alertes |
 | `tennisvalue dashboard` | Lance l'application (http://localhost:8501) |
 | `tennisvalue bet-add "Alcaraz - Sinner" "Carlos Alcaraz" winamax_fr 2.25 10 --p 0.46` | Enregistre un pari placé |
 | `tennisvalue bet-settle 1 gagne` | Règle un pari (`gagne`, `perdu`, `annule`) |
 | `tennisvalue bankroll` | Bilan : bankroll, yield, drawdown, CLV moyenne |
-| `pytest` | Lance les 42 tests (modèle de Markov, dé-margination, Kelly, absence de fuite de données, pages de l'application…) |
+| `pytest` | Lance les 47 tests (modèle de Markov, dé-margination, Kelly, absence de fuite de données, pages de l'application…) |
 
 **Routine conseillée** : `fetch-odds` plusieurs fois par jour (planificateur de tâches Windows ou `cron`), pour mesurer l'ouverture, les mouvements et la clôture ; `scan` avant de parier ; `bankroll` chaque semaine. Chaque semaine, retélécharger les fichiers 2026 de tennis-data puis relancer `build` pour mettre les notes à jour : dans l'application, **Réglages → Nouveaux résultats de matchs** (déposer les deux fichiers, le modèle est recalculé).
 
@@ -126,6 +137,8 @@ src/tennisvalue/
   sync.py                relevé local ou sur GitHub, git pull, état des données
   pipeline.py, cli.py    chaîne complète et ligne de commande
   market/flux.py         flux estimés : consensus français contre sharp, origine du mouvement
+  ingest/polymarket.py   Polymarket : matchs, transactions, prix horaire (API publiques)
+  market/money.py        argent réel : rapprochement des matchs, part de l'argent, gros paris
   web/api.py             application : API JSON (FastAPI) et page web
   web/static/            interface (HTML, CSS, JavaScript sans dépendance)
 scripts/                 installation Chromebook, lanceur, synchro, routine cron

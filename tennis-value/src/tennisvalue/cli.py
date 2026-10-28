@@ -40,6 +40,36 @@ def fetch_odds(sport: str = typer.Option("", help="Clé de tournoi précise (sin
     typer.echo(f"{r['n']} cotes enregistrées sur {r['n_tournois']} tournoi(s). Crédits restants : {r['remaining']}")
 
 
+@app.command("fetch-polymarket")
+def fetch_polymarket(export: bool = typer.Option(False, help="Écrit le relevé dans data/polymarket (GitHub Actions)")):
+    """Relève les matchs Polymarket (prix, volumes, transactions) : gratuit, sans clé."""
+    from tennisvalue.ingest import polymarket as pm
+
+    s = load_settings()
+    snap = pm.collect(pm.PolymarketClient(), pm.latest(s.poly_dir), series=s.poly_series)
+    n_vol = sum(m["volume"] for m in snap["markets"])
+    typer.echo(f"{len(snap['markets'])} matchs Polymarket, {len(snap['trades'])} nouvelles transactions, "
+               f"{len(snap['prices'])} points de prix ; {n_vol:,.0f} $ échangés au total.")
+    path = pm.export(snap, s.poly_dir)
+    if not export:
+        con = db.connect(s.db_path)
+        pm.import_files(con, s.poly_dir)
+        con.close()
+    typer.echo(f"Relevé : {path}")
+
+
+@app.command("import-polymarket")
+def import_polymarket():
+    """Ajoute à la base les relevés Polymarket récupérés par `git pull`."""
+    from tennisvalue.ingest import polymarket as pm
+
+    s = load_settings()
+    con = db.connect(s.db_path)
+    n = pm.import_files(con, s.poly_dir)
+    con.close()
+    typer.echo(f"{n} transactions Polymarket importées.")
+
+
 @app.command("import-odds")
 def import_odds():
     """Ajoute à la base les relevés de GitHub Actions récupérés par `git pull`."""

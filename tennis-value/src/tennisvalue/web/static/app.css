@@ -151,6 +151,17 @@ aside.slip {
 .arrow-up { color: var(--green); font-size: 11px; } .arrow-down { color: var(--red); font-size: 11px; }
 .odd.selected .arrow-up, .odd.selected .arrow-down { color: #fff; }
 
+/* argent réel (Polymarket) */
+.money .who { color: var(--text); font-weight: 700; }
+.money-bar { height: 7px; border-radius: 4px; background: #f472b6; margin: 4px 0 6px; overflow: hidden; }
+.money-bar span { display: block; height: 100%; background: #60a5fa; }
+.odds-flux { font-size: 11.5px; color: var(--faint); }
+.poly-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 16px; }
+.mini-kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+.mini-kpis div { background: var(--panel-3); border-radius: 8px; padding: 7px 10px; display: flex; flex-direction: column; }
+.mini-kpis span { font-size: 11.5px; color: var(--muted); }
+.mini-kpis b { font-size: 15px; }
+
 /* indicateur de flux */
 .flux { font-size: 12px; color: var(--muted); }
 .flux-bar { position: relative; height: 8px; border-radius: 4px; background: var(--panel-3); margin: 4px 0 5px; overflow: hidden; }
@@ -290,7 +301,7 @@ tr.best td { color: var(--green); font-weight: 700; }
   .header-actions .lbl { display: none; }
   .match-row { grid-template-columns: 58px minmax(0, 1fr); }
   .match-row .odds, .match-row .flux { grid-column: 1 / -1; }
-  .detail, .explain, .form-grid { grid-template-columns: 1fr; }
+  .detail, .explain, .form-grid, .poly-grid { grid-template-columns: 1fr; }
   .kpis { grid-template-columns: repeat(2, 1fr); }
   .mover { grid-template-columns: 28px minmax(0, 1fr) 90px; }
   .mover .odds-move, .mover .spark { display: none; }

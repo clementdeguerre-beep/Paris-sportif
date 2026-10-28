@@ -11,6 +11,7 @@ const euros = (x) => (x == null ? "–" : nf(Math.abs(x - Math.round(x)) < 0.005
 const signed = (s, x) => (x > 0 ? "+" : "") + s;
 const pct = (x, d = 0, sign = false) => (x == null ? "–" : (sign && x > 0 ? "+" : "") + nf(d).format(100 * x) + " %");
 const pts = (x) => (x == null ? "–" : (x > 0 ? "+" : "") + nf(1).format(x) + " pt" + (Math.abs(x) >= 2 ? "s" : ""));
+const usd = (x) => (x == null ? "–" : x >= 10000 ? `${nf(0).format(x / 1000)} k$` : x >= 1000 ? `${nf(1).format(x / 1000)} k$` : `${nf(0).format(x)} $`);
 const short = (name) => { const p = String(name || "").trim().split(/\s+/); return p.length > 1 ? p.slice(1).join(" ") : p[0]; };
 
 const DAY = new Intl.DateTimeFormat("fr-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" });
@@ -59,7 +60,7 @@ async function busy(text, fn) {
 /* ------------------------------------------------------------------ état */
 const S = {
   status: null, matches: [], details: {}, open: new Set(), slip: null, page: "matchs",
-  filter: { tour: "all", tournament: null, value: false }, moversHours: 0, oddsSide: {}, bets: null,
+  filter: { tour: "all", tournament: null, value: false }, moversHours: 0, moversSource: "argent", oddsSide: {}, bets: null,
 };
 const ORIGIN = {
   "informé": { cls: "informe", label: "Argent informé" },
@@ -199,11 +200,21 @@ function oddButton(m, side) {
     <span class="lbl">${esc(short(m[`player_${side}`]))}</span><span class="val num">${num(cote)}${arrow}</span><span class="bk">${esc(m[`book_${side}_name`] || "")}</span></button>`;
 }
 
+function moneyLine(m) {
+  const p = m.poly;
+  if (!p || !(p.usd_1 + p.usd_2 > 0)) return "";
+  const lead = p.share_1 >= 0.5 ? 1 : 2, share = lead === 1 ? p.share_1 : 1 - p.share_1;
+  return `<div class="money" title="Argent réellement misé sur Polymarket depuis l'ouverture du marché (${p.n} transactions)">
+    <div><span class="who">💰 ${pct(share)} ${esc(short(m[`player_${lead}`]))}</span> <span class="faint">· ${usd(p.volume)} misés</span></div>
+    <div class="money-bar"><span style="width:${(100 * p.share_1).toFixed(1)}%"></span></div></div>`;
+}
+
 function fluxBlock(m) {
-  const f = m.flux;
-  if (!f) return `<div class="flux faint">Pas de cote française</div>`;
-  if (f.n_releves < 2) return `<div class="flux faint">1 relevé : l'évolution apparaîtra au prochain</div>`;
+  const f = m.flux, money = moneyLine(m);
+  if (!f) return `<div class="flux">${money}<span class="faint">Pas de cote française</span></div>`;
+  if (f.n_releves < 2) return `<div class="flux">${money}<span class="faint">${money ? "Cotes : 1 seul relevé" : "1 relevé : l'évolution apparaîtra au prochain"}</span></div>`;
   const o = ORIGIN[f.origine] || ORIGIN.stable;
+  if (money) return `<div class="flux">${money}<div class="odds-flux">Cotes : ${f.vers ? `→ ${esc(short(m[`player_${f.vers}`]))} ${pts(Math.abs(f.flux))} · <span class="origin o-${o.cls}">${o.label}</span>` : "stables"}</div></div>`;
   const w = Math.min(Math.abs(f.flux) / 10, 1) * 50;
   const fill = f.vers === 1 ? `right:50%;width:${w}%` : f.vers === 2 ? `left:50%;width:${w}%` : "left:49%;width:2%";
   const who = f.vers ? `<span class="who">→ ${esc(short(m[`player_${f.vers}`]))}</span> ${pts(Math.abs(f.flux))}` : "Cotes stables";
@@ -306,6 +317,7 @@ function renderDetail(ev) {
       <div id="co-${esc(ev)}"></div></div>
     <div class="card"><h3>💶 Flux estimé ${o ? `<span class="origin o-${o.cls}" style="font-size:12px">${o.label}</span>` : ""}</h3>
       <div id="cf-${esc(ev)}"></div><p>${fluxText}</p></div>
+    ${polyCard(d, ev)}
     <div class="card"><h3>🏦 Cotes par bookmaker</h3><div class="table-wrap"><table>
       <tr><th>Bookmaker</th><th class="r">${esc(short(d.player_1))}</th><th class="r">${esc(short(d.player_2))}</th><th class="r">Marge</th></tr>${rows}</table></div>
       ${others ? `<p class="faint">${others} bookmaker${others > 1 ? "s" : ""} étranger${others > 1 ? "s" : ""} non affiché${others > 1 ? "s" : ""}.</p>` : ""}</div>
@@ -319,12 +331,46 @@ function renderDetail(ev) {
   const oddsSeries = d.series.filter((s) => s.french || s.sharp).map((s) => ({ name: s.name, color: colorFor(s.key, s.sharp), dashed: s.sharp,
     points: s.points.map((p) => [Date.parse(p[0]), p[side]]) }));
   lineChart($(`#co-${CSS.escape(ev)}`), { series: oddsSeries, yFmt: (v) => num(v) });
+  const pd_ = d.poly_detail;
   lineChart($(`#cf-${CSS.escape(ev)}`), {
     series: [
       { name: `Bookmakers français (chance de ${short(d.player_1)})`, color: "#60a5fa", width: 2.5, points: c.filter((r) => r[1] != null).map((r) => [Date.parse(r[0]), 100 * r[1]]) },
       { name: "Pinnacle / Betfair", color: "#e5e7eb", dashed: true, points: c.filter((r) => r[2] != null).map((r) => [Date.parse(r[0]), 100 * r[2]]) },
+      ...(pd_ ? [{ name: "Polymarket", color: "#fbbf24", points: pd_.prices.map((r) => [Date.parse(r[0]), 100 * r[1]]) }] : []),
     ], yFmt: (v) => `${num(v, 0)} %`,
   });
+  if (pd_ && pd_.cumul.length) lineChart($(`#cp-${CSS.escape(ev)}`), {
+    series: [{ name: `Argent net : vers ${short(d.player_1)} (+) ou ${short(d.player_2)} (−)`, color: "#22c55e", width: 2.5,
+      points: pd_.cumul.map((r) => [Date.parse(r[0]), r[1]]) }],
+    yFmt: (v) => `${v > 0 ? "+" : ""}${usd(Math.abs(v)).replace(/^/, v < 0 ? "−" : "")}`, height: 200,
+  });
+}
+
+function polyCard(d, ev) {
+  const p = d.poly, pd_ = d.poly_detail;
+  if (!p) return "";
+  const has = p.usd_1 + p.usd_2 > 0;
+  const lead = p.share_1 >= 0.5 ? 1 : 2, share = lead === 1 ? p.share_1 : 1 - p.share_1;
+  let recent = "";
+  if (p.usd_24h > 0 && p.share_1_24h != null) {
+    const l24 = p.share_1_24h >= 0.5 ? 1 : 2, s24 = l24 === 1 ? p.share_1_24h : 1 - p.share_1_24h;
+    recent = ` Sur 24 h : <b>${pct(s24)}</b> sur ${esc(short(d[`player_${l24}`]))} (${usd(p.usd_24h)})${l24 !== lead ? " : <b>l'argent récent change de camp</b>" : ""}.`;
+  }
+  const big = (pd_ && pd_.big) || [];
+  return `<div class="card wide"><h3>💰 Argent réel misé (Polymarket)<span class="right faint" style="font-size:12px;font-weight:400">relevé ${esc(ago(p.fetched_at))}</span></h3>
+    <div class="poly-grid">
+      <div><div id="cp-${esc(ev)}">${has ? "" : `<p class="muted">Aucune transaction pour l'instant.</p>`}</div></div>
+      <div>
+        <div class="mini-kpis">
+          <div><span>Misé au total</span><b>${usd(p.volume)}</b></div><div><span>Sur 24 h</span><b>${usd(p.volume_24h)}</b></div>
+          <div><span>Liquidité</span><b>${usd(p.liquidity)}</b></div><div><span>Chance (prix)</span><b>${pct(p.price_1)} ${esc(short(d.player_1))}</b></div>
+        </div>
+        ${has ? `<p>Depuis l'ouverture : <b>${pct(share)}</b> de l'argent sur <b>${esc(d[`player_${lead}`])}</b> (${usd(lead === 1 ? p.usd_1 : p.usd_2)} contre ${usd(lead === 1 ? p.usd_2 : p.usd_1)}).${recent}</p>` : ""}
+        ${big.length ? `<div class="table-wrap"><table><tr><th>Gros paris</th><th>Joueur</th><th class="r">Montant</th><th class="r">Chance</th></tr>
+          ${big.map((b) => `<tr><td class="faint">${esc(when(b.ts))}</td><td>${b.side === "BUY" ? "" : "vente "}${esc(short(b.player))}</td><td class="r num"><b>${usd(b.usd)}</b></td><td class="r num">${pct(b.price)}</td></tr>`).join("")}</table></div>` : ""}
+      </div>
+    </div>
+    <p class="faint" style="font-size:11.5px">Polymarket n'est pas autorisé en France : ses données publiques sont lues pour l'analyse, on n'y parie pas. Part de l'argent = achats d'un joueur + ventes de son adversaire.</p></div>`;
 }
 
 /* ------------------------------------------------------------------ coupon */
@@ -406,8 +452,9 @@ async function saveSlip() {
 
 /* ------------------------------------------------------------------ page Tendances */
 async function renderTendances() {
+  if (S.moversSource === "argent") return renderTendancesArgent();
   const h = S.moversHours;
-  $("#main").innerHTML = `<h1>Tendances : où va l'argent</h1>
+  $("#main").innerHTML = `<h1>Tendances : où va l'argent</h1>${sourceSeg()}
     <p class="subtitle">Joueurs dont la chance estimée par les bookmakers a le plus monté : c'est sur eux que l'argent arrive.</p>
     <div class="explain">
       <div class="card"><b class="o-informe">Argent informé</b>Pinnacle / Betfair ont bougé : parieurs avisés ou information nouvelle (blessure, forfait). Le signal le plus fiable.</div>
@@ -434,6 +481,40 @@ async function renderTendances() {
       <div class="spark">${sparkline(m.spark, o.cls === "stable" ? "#6c6f7d" : getComputedStyle(document.documentElement).getPropertyValue(`--${{ informe: "gold", public: "blue", contra: "purple" }[o.cls]}`).trim())}</div>
     </div>`;
   }).join("") : `<div class="empty"><div class="big">📈</div>Aucun match à venir dans les relevés.</div>`;
+}
+
+function sourceSeg() {
+  const s = S.moversSource;
+  return `<div class="toolbar"><span class="seg">
+    <button class="${s === "argent" ? "active" : ""}" data-act="movers-source" data-v="argent">💰 Argent réel (Polymarket)</button>
+    <button class="${s === "cotes" ? "active" : ""}" data-act="movers-source" data-v="cotes">📉 Mouvements de cotes</button></span></div>`;
+}
+
+async function renderTendancesArgent() {
+  const h = S.moversHours;
+  $("#main").innerHTML = `<h1>Tendances : où va l'argent</h1>${sourceSeg()}
+    <p class="subtitle">Montants réellement misés sur Polymarket, où chaque transaction est publique : les matchs où l'argent penche le plus d'un côté.</p>
+    <div class="explain">
+      <div class="card"><b style="color:var(--green)">Argent réel</b>Des dollars effectivement échangés, pas une estimation. Le joueur en tête reçoit la plus grande part.</div>
+      <div class="card"><b style="color:var(--blue)">Part de l'argent</b>Achats d'un joueur + ventes de son adversaire, rapportés au total échangé sur la période.</div>
+      <div class="card"><b style="color:var(--gold)">À savoir</b>Volumes parfois modestes : quelques gros paris peuvent faire basculer la part. Polymarket n'est pas autorisé en France : on lit, on n'y parie pas.</div>
+    </div>
+    <div class="toolbar"><span class="seg">
+      <button class="${h === 0 ? "active" : ""}" data-act="movers" data-v="0">Depuis l'ouverture</button>
+      <button class="${h === 24 ? "active" : ""}" data-act="movers" data-v="24">24 h</button>
+      <button class="${h === 6 ? "active" : ""}" data-act="movers" data-v="6">6 h</button></span></div>
+    <div class="movers" id="movers"><p class="muted">Chargement…</p></div>`;
+  let list;
+  try { list = await api(`/api/movers/argent?hours=${h}`); } catch (e) { return toast(e.message, true); }
+  if (S.page !== "tendances" || S.moversSource !== "argent") return;
+  $("#movers").innerHTML = list.length ? list.map((m, i) => `
+    <div class="mover"${m.event_id ? ` data-act="goto" data-ev="${esc(m.event_id)}"` : ` style="cursor:default"`}>
+      <div class="rank">${i + 1}</div>
+      <div><div class="name">${esc(m.player)}</div><div class="sub">${esc(m.player_1)} – ${esc(m.player_2)} · ${esc(m.tournament)} · ${esc(when(m.start))}${m.event_id ? "" : " · pas de cote française"}</div></div>
+      <div><div class="big-delta" style="color:var(--green)">${pct(m.share)}</div><div class="faint" style="font-size:12px">de ${usd(m.usd_total)}${m.n_big ? ` · ${m.n_big} gros pari${m.n_big > 1 ? "s" : ""}` : ""}</div></div>
+      <div class="odds-move num">${pct(m.price)}<div class="faint" style="font-size:11.5px">chance selon Polymarket</div></div>
+      <div class="spark">${sparkline(m.spark, "#22c55e")}</div>
+    </div>`).join("") : `<div class="empty"><div class="big">💰</div>Pas encore de données Polymarket : elles arrivent avec les relevés automatiques (bouton ⟳ Mettre à jour).</div>`;
 }
 
 /* ------------------------------------------------------------------ page Mes paris */
@@ -546,6 +627,7 @@ async function renderReglages() {
         <p>Une fois par semaine : sur <a href="http://www.tennis-data.co.uk/alldata.php" target="_blank" rel="noopener">tennis-data.co.uk</a>, télécharge les fichiers Excel de la saison (hommes et femmes), puis dépose-les ici. Le modèle est ensuite recalculé.</p>
         <label class="drop" id="drop">Glisse les fichiers .xlsx ici, ou clique pour les choisir<input id="files" type="file" accept=".xlsx" multiple class="hidden"></label></div>
       <div class="card wide"><h3>📡 Relevés de cotes</h3><p>GitHub relève les cotes à <b>8 h, 11 h, 14 h, 17 h et 20 h</b> (une heure plus tard en été), même ordinateur éteint. L'application les récupère toute seule à l'ouverture puis toutes les 30 minutes (bouton ⟳ pour forcer).
+        Les flux d'argent réels de <b>Polymarket</b> sont relevés en même temps, gratuitement.
         ${st.can_fetch === "local" ? "« Relever maintenant » utilise la clé The Odds API de cet ordinateur." : st.can_fetch === "github" ? "« Relever maintenant » lance un relevé sur GitHub (1 à 2 minutes)." : "« Relever maintenant » n'est pas disponible : lancer scripts/install_chromebook.sh."}</p></div>
     </div>`;
   const drop = $("#drop"), input = $("#files");
@@ -669,6 +751,7 @@ document.addEventListener("click", async (e) => {
   else if (act === "slip-clear") { S.slip = null; render(); }
   else if (act === "slip-save") saveSlip();
   else if (act === "movers") { S.moversHours = +t.dataset.v; renderTendances(); }
+  else if (act === "movers-source") { S.moversSource = t.dataset.v; renderTendances(); }
   else if (act === "goto") location.hash = `#/matchs/${encodeURIComponent(t.dataset.ev)}`;
   else if (act === "settle") {
     try { await api(`/api/bets/${t.dataset.id}/settle`, { method: "POST", body: JSON.stringify({ result: t.dataset.r }) }); } catch (err) { return toast(err.message, true); }

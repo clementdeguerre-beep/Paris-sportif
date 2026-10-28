@@ -22,8 +22,9 @@ from pydantic import BaseModel
 
 from tennisvalue import db, sync
 from tennisvalue.config import Settings, load_settings, save_settings
+from tennisvalue.ingest import polymarket as pm
 from tennisvalue.ingest.snapshots import import_snapshots
-from tennisvalue.market import flux
+from tennisvalue.market import flux, money
 from tennisvalue.market.devig import fair_two_way
 from tennisvalue.market.movement import steam_moves
 
@@ -108,6 +109,13 @@ def upcoming_snapshots(s: Settings) -> pd.DataFrame:
     return snaps
 
 
+def poly_last(s: Settings):
+    con = db.connect(s.db_path)
+    v = con.execute("SELECT max(fetched_at) FROM poly_markets").fetchall()[0][0]
+    con.close()
+    return v
+
+
 def open_stakes(s: Settings) -> float:
     con = db.connect(s.db_path)
     v = con.execute("SELECT coalesce(sum(stake), 0) FROM bets WHERE status = 'ouvert'").fetchone()[0]
@@ -132,8 +140,39 @@ def status():
         "can_fetch": "local" if s.odds_api_key else ("github" if sync.gh_ready() else None),
         "settings": {k: getattr(s, k) for k in EDITABLE},
         "open_total": open_stakes(s),
+        "poly_last": poly_last(s),
         "min_stake": 1.0,
     })
+
+
+# --------------------------------------------------------------------------- Polymarket
+def poly_data(s: Settings) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Dernier état de chaque match Polymarket récent, ses transactions et son prix horaire."""
+    con = db.connect(s.db_path)
+    recent = "SELECT cond FROM poly_markets WHERE game_start > now()::TIMESTAMP - INTERVAL 1 DAY"
+    mk = db.read(con, f"""SELECT * EXCLUDE (rn) FROM (SELECT *, row_number() OVER (PARTITION BY cond ORDER BY fetched_at DESC) rn
+                          FROM poly_markets WHERE cond IN ({recent})) WHERE rn = 1""")
+    tr = db.read(con, f"SELECT * FROM poly_trades WHERE cond IN ({recent})")
+    px = db.read(con, f"SELECT * FROM poly_prices WHERE cond IN ({recent}) ORDER BY ts")
+    con.close()
+    return mk, tr, px
+
+
+def poly_summary(cond: str, m: pd.Series, trades: pd.DataFrame, swapped: bool) -> dict:
+    """Résumé d'un match Polymarket, orienté comme le match des bookmakers (joueur 1 = leur joueur 1)."""
+    now = pd.Timestamp.now(tz="UTC").tz_localize(None)
+    p, p24 = money.pressure(trades), money.pressure(trades, since=now - pd.Timedelta(hours=24))
+    flip = (lambda x: 1 - x) if swapped else (lambda x: x)
+    return {"cond": cond, "fetched_at": m["fetched_at"], "series": m["series"], "price_1": flip(m["price_1"]),
+            "volume": m["volume"], "volume_24h": m["volume_24h"], "liquidity": m["liquidity"],
+            "usd_1": p["usd_2"] if swapped else p["usd_1"], "usd_2": p["usd_1"] if swapped else p["usd_2"],
+            "share_1": flip(p["share_1"]), "share_1_24h": flip(p24["share_1"]), "usd_24h": p24["usd_1"] + p24["usd_2"],
+            "n": p["n"], "n_big": p["n_big"]}
+
+
+def poly_links(s: Settings, snaps: pd.DataFrame, mk: pd.DataFrame) -> dict:
+    events = snaps.drop_duplicates("event_id")[["event_id", "player_1", "player_2", "commence_time"]]
+    return money.link(events, mk)
 
 
 # --------------------------------------------------------------------------- matchs
@@ -152,6 +191,9 @@ def _match_entries(s: Settings, snaps: pd.DataFrame, event_ids=None) -> list[dic
     con = db.connect(s.db_path)
     bets = db.read(con, "SELECT bet_id, event_id, selection, book, odds, stake, status FROM bets WHERE event_id IS NOT NULL")
     con.close()
+    mk, tr, _ = poly_data(s)
+    links = poly_links(s, snaps, mk)
+    mk = mk.set_index("cond")
 
     latest = snaps.sort_values("fetched_at").groupby(["event_id", "book"]).tail(1)
     out = []
@@ -176,6 +218,9 @@ def _match_entries(s: Settings, snaps: pd.DataFrame, event_ids=None) -> list[dic
         if ev in fx.index:
             e["flux"] = fx.loc[ev].to_dict()
             e["flux_24h"] = fx24.loc[ev].to_dict() if ev in fx24.index else None
+        if ev in links:
+            cond, swapped = links[ev]
+            e["poly"] = poly_summary(cond, mk.loc[cond], tr[tr["cond"] == cond], swapped)
         if not pred.empty and ev in pred.index:
             p = pred.loc[ev]
             e.update({k: p[k] for k in ("p_sharp", "p_model", "p_decision", "pari", "cote", "book", "value", "mise",
@@ -209,7 +254,54 @@ def match_detail(event_id: str):
     t = flux.timeline(snaps, s.sharp_books, s.anj_books)
     e["series"] = series
     e["consensus"] = [[r.fetched_at, r.fr, r.sharp] for r in t.itertuples()]
+    if "poly" in e:
+        mk, tr, px = poly_data(s)
+        cond = e["poly"]["cond"]
+        swapped = poly_links(s, snaps, mk).get(event_id, (cond, False))[1]
+        sign = -1 if swapped else 1
+        trades = tr[tr["cond"] == cond]
+        cum = money.cumulative(trades)
+        big = money.big_trades(trades)
+        names = (e["player_2"], e["player_1"]) if swapped else (e["player_1"], e["player_2"])
+        e["poly_detail"] = {
+            "prices": [[r.ts, (1 - r.price_1) if swapped else r.price_1] for r in px[px["cond"] == cond].itertuples()],
+            "cumul": [[r.ts, sign * r.net_1] for r in cum.itertuples()],
+            "big": [{"ts": r.ts, "player": names[r.outcome_index], "side": r.side, "usd": r.usd, "price": r.price}
+                    for r in big.itertuples()],
+        }
     return ok(e)
+
+
+@app.get("/api/movers/argent")
+def movers_money(hours: int = 0):
+    """Tendances, argent réel : matchs Polymarket à venir classés par écart d'argent entre les deux joueurs."""
+    s = load_settings()
+    mk, tr, _ = poly_data(s)
+    now = pd.Timestamp.now(tz="UTC").tz_localize(None)
+    mk = mk[mk["game_start"] > now]
+    if mk.empty:
+        return ok([])
+    snaps = upcoming_snapshots(s)
+    links = {cond: (ev, sw) for ev, (cond, sw) in (poly_links(s, snaps, mk).items() if not snaps.empty else [])}
+    since = now - pd.Timedelta(hours=hours) if hours else None
+    out = []
+    for m in mk.itertuples():
+        trades = tr[tr["cond"] == m.cond]
+        p = money.pressure(trades, since)
+        total = p["usd_1"] + p["usd_2"]
+        if total < 50:
+            continue
+        side = 1 if p["usd_1"] >= p["usd_2"] else 2
+        cum = money.cumulative(trades if since is None else trades[trades["ts"] >= since])
+        ev, _ = links.get(m.cond, (None, False))
+        out.append({"cond": m.cond, "event_id": ev, "start": m.game_start, "tournament": m.tournament,
+                    "series": m.series, "player_1": m.player_1, "player_2": m.player_2, "side": side,
+                    "player": m.player_1 if side == 1 else m.player_2, "usd_lead": max(p["usd_1"], p["usd_2"]),
+                    "usd_total": total, "share": max(p["usd_1"], p["usd_2"]) / total, "n": p["n"], "n_big": p["n_big"],
+                    "volume": m.volume, "price": m.price_1 if side == 1 else 1 - m.price_1,
+                    "spark": [(v if side == 1 else -v) for v in cum["net_1"]]})
+    out.sort(key=lambda r: -(2 * r["usd_lead"] - r["usd_total"]))
+    return ok(out)
 
 
 @app.get("/api/movers")
@@ -354,8 +446,9 @@ def update():
                 raise HTTPException(502, f"Impossible de joindre GitHub (connexion internet ?) : {e}") from None
         con = db.connect(s.db_path)
         n = import_snapshots(con, s.snapshots_dir)
+        n_poly = pm.import_files(con, s.poly_dir)
         con.close()
-        return ok({"imported": n, "results_newer": sync.status(s)["results_newer"],
+        return ok({"imported": n, "imported_poly": n_poly, "results_newer": sync.status(s)["results_newer"],
                    "new_version": sync.code_version() != VERSION})
     finally:
         _lock.release()
@@ -370,12 +463,20 @@ def fetch():
         try:
             if s.odds_api_key:
                 r = sync.fetch_local(s)
+                try:                                  # Polymarket : gratuit, mais peut être injoignable
+                    con = db.connect(s.db_path)
+                    pm.export(pm.collect(pm.PolymarketClient(), pm.latest(s.poly_dir), series=s.poly_series), s.poly_dir)
+                    pm.import_files(con, s.poly_dir)
+                    con.close()
+                except Exception:
+                    pass
                 return ok({"message": f"{r['n']} cotes relevées. Crédits restants : {r['remaining']}."})
             if sync.gh_ready():
                 url = sync.fetch_remote()
                 sync.git_pull()
                 con = db.connect(s.db_path)
                 n = import_snapshots(con, s.snapshots_dir)
+                pm.import_files(con, s.poly_dir)
                 con.close()
                 return ok({"message": f"{n} cotes relevées sur GitHub.", "url": url})
         except Exception as e:  # réseau, clé refusée, GitHub…

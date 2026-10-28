@@ -91,3 +91,25 @@ def test_settings_and_uploads(client):
     assert client.put("/api/settings", json={"min_odds": 3, "max_odds": 2}).status_code == 400
     assert client.post("/api/results", content=b"pas un fichier excel").status_code == 400
     assert client.get("/api/analysis").json() is None
+
+
+def test_polymarket_money_in_api(client, tmp_path):
+    """Marché Polymarket d'e1 avec les joueurs dans l'ordre inverse : tout doit être réorienté."""
+    now = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
+    con = db.connect(tmp_path / "t.duckdb")
+    con.execute("INSERT INTO poly_markets VALUES (?, 'c1', 'atp-x', 'atp', 'Paris', ?, 'Jannik Sinner', 'Carlos Alcaraz', "
+                "0.4, 5000, 1200, 9000)", [now, now + timedelta(hours=5)])
+    for k, (oi, side, usd) in enumerate([(1, "BUY", 900.0), (0, "SELL", 100.0), (0, "BUY", 250.0)]):   # 1 000 $ sur Alcaraz
+        con.execute("INSERT INTO poly_trades VALUES ('c1', ?, ?, ?, ?, 0.5, ?)", [now - timedelta(hours=k), oi, side, usd, f"0x{k}"])
+    con.execute("INSERT INTO poly_prices VALUES ('c1', ?, 0.42), ('c1', ?, 0.40)", [now - timedelta(hours=2), now])
+    con.close()
+    e1 = {m["event_id"]: m for m in client.get("/api/matches").json()}["e1"]
+    p = e1["poly"]                                    # e1 : Alcaraz (J1) - Sinner (J2)
+    assert p["price_1"] == pytest.approx(0.6) and (p["usd_1"], p["usd_2"]) == (1000.0, 250.0)
+    assert p["share_1"] == pytest.approx(0.8) and p["n_big"] == 1
+    d = client.get("/api/matches/e1").json()["poly_detail"]
+    assert [round(x[1], 2) for x in d["prices"]] == [0.58, 0.6]
+    assert d["cumul"][-1][1] == pytest.approx(750.0) and d["big"][0]["player"] == "Carlos Alcaraz"
+    mv = client.get("/api/movers/argent").json()
+    assert (mv[0]["event_id"], mv[0]["player"], round(mv[0]["share"], 2)) == ("e1", "Carlos Alcaraz", 0.8)
+    assert client.get("/api/status").json()["poly_last"].endswith("Z")

@@ -6,7 +6,10 @@ Tables principales :
 - bt_summary      : synthèse du backtest par stratégie ;
 - odds_snapshots  : cotes en direct horodatées (ouverture -> clôture) ;
 - predictions     : sorties du scanner (matchs à venir) ;
-- bets            : mes paris réels (suivi de bankroll et CLV).
+- bets            : mes paris réels (suivi de bankroll et CLV) ;
+- poly_markets    : matchs Polymarket à chaque relevé (prix, volumes, liquidité) ;
+- poly_trades     : transactions Polymarket (joueur, achat/vente, montant, heure) ;
+- poly_prices     : prix horaire Polymarket du joueur 1.
 """
 from __future__ import annotations
 
@@ -30,6 +33,16 @@ CREATE TABLE IF NOT EXISTS bets (
     closing_odds_fair DOUBLE,                   -- cote juste de clôture (sharp, sans marge)
     clv DOUBLE, pnl DOUBLE, note VARCHAR
 );
+CREATE TABLE IF NOT EXISTS poly_markets (
+    fetched_at TIMESTAMP, cond VARCHAR, slug VARCHAR, series VARCHAR, tournament VARCHAR,
+    game_start TIMESTAMP, player_1 VARCHAR, player_2 VARCHAR, price_1 DOUBLE,
+    volume DOUBLE, volume_24h DOUBLE, liquidity DOUBLE
+);
+CREATE TABLE IF NOT EXISTS poly_trades (
+    cond VARCHAR, ts TIMESTAMP, outcome_index INTEGER, side VARCHAR, usd DOUBLE, price DOUBLE, tx VARCHAR
+);
+CREATE TABLE IF NOT EXISTS poly_prices (cond VARCHAR, ts TIMESTAMP, price_1 DOUBLE);
+CREATE TABLE IF NOT EXISTS poly_imports (file VARCHAR);
 """
 
 

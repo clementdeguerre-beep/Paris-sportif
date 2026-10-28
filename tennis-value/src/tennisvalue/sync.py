@@ -94,7 +94,7 @@ def gh_ready() -> bool:
 def fetch_remote(on_progress=lambda msg: None, timeout: float = 600, poll: float = 5) -> str:
     """Lance le relevé sur GitHub Actions et attend la fin ; renvoie le lien vers l'exécution."""
     started = pd.Timestamp(datetime.now(timezone.utc)) - pd.Timedelta(seconds=30)  # marge d'horloge
-    _run(["gh", "workflow", "run", WORKFLOW])
+    _run(["gh", "workflow", "run", WORKFLOW, "-f", "cotes=true"])
     on_progress("Relevé demandé à GitHub…")
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:

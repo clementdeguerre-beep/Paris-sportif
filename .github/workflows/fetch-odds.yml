@@ -1,6 +1,7 @@
-# Relève les cotes toutes les 3 heures en journée et les
-# ajoute au dépôt dans tennis-value/data/snapshots/. Sur l'ordinateur :
-#   git pull && .venv/bin/tennisvalue import-odds
+# Toutes les 3 heures en journée : relève les matchs Polymarket (argent réellement misé,
+# gratuit) puis les cotes des bookmakers, et les ajoute au dépôt dans
+# tennis-value/data/polymarket/ et tennis-value/data/snapshots/. Sur l'ordinateur :
+#   git pull && .venv/bin/tennisvalue import-odds && .venv/bin/tennisvalue import-polymarket
 # Prérequis : secret ODDS_API_KEY (Settings > Secrets and variables > Actions).
 name: Relevé des cotes
 
@@ -10,6 +11,11 @@ on:
     # 9 h -> 21 h en été.
     - cron: "7 7-19/3 * * *"
   workflow_dispatch:
+    inputs:
+      cotes:
+        description: "Relever aussi les cotes des bookmakers (crédits The Odds API)"
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -33,16 +39,21 @@ jobs:
           cache-dependency-path: tennis-value/pyproject.toml
       # Installation éditable : les chemins (data/snapshots…) restent relatifs au dépôt.
       - run: pip install -e .
-      - name: Relevé
+      - name: Relevé Polymarket
+        continue-on-error: true          # un souci chez Polymarket n'empêche pas le relevé des cotes
+        run: tennisvalue fetch-polymarket --export
+      - name: Relevé des cotes
+        if: github.event_name == 'schedule' || inputs.cotes
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
         run: tennisvalue fetch-odds --export
       - name: Enregistrement dans le dépôt
+        if: always()                     # garde le relevé Polymarket même si celui des cotes échoue
         run: |
-          if [ -z "$(git status --porcelain data/snapshots)" ]; then echo "Aucun nouveau relevé."; exit 0; fi
+          if [ -z "$(git status --porcelain data/snapshots data/polymarket)" ]; then echo "Aucun nouveau relevé."; exit 0; fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/snapshots
-          git commit -m "Relevé des cotes $(date -u +%Y-%m-%dT%H:%MZ)"
+          git add data/snapshots data/polymarket
+          git commit -m "Relevé des cotes et de Polymarket $(date -u +%Y-%m-%dT%H:%MZ)"
           for i in 1 2 3; do git pull --rebase && git push && exit 0; sleep 10; done
           exit 1
