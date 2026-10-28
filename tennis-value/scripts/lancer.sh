@@ -5,11 +5,12 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 URL="http://localhost:8501"
 
-if ! curl -fsS "$URL/_stcore/health" >/dev/null 2>&1; then
+running() { curl -fsS "$URL/api/health" 2>/dev/null | grep -q '"ok"'; }
+if ! running; then
   mkdir -p logs
-  setsid nohup .venv/bin/python -m streamlit run dashboard/app.py >> logs/app.log 2>&1 < /dev/null &
+  setsid nohup .venv/bin/tennisvalue dashboard >> logs/app.log 2>&1 < /dev/null &
   for _ in $(seq 60); do
-    curl -fsS "$URL/_stcore/health" >/dev/null 2>&1 && break
+    running && break
     sleep 1
   done
 fi

@@ -1,15 +1,13 @@
 """Ligne de commande : `tennisvalue <commande>` (ou `python -m tennisvalue.cli <commande>`)."""
 from __future__ import annotations
 
-import subprocess
-import sys
 from datetime import date, datetime
 
 import pandas as pd
 import typer
 
 from tennisvalue import db, pipeline
-from tennisvalue.config import ROOT, load_settings
+from tennisvalue.config import load_settings
 
 app = typer.Typer(help="Analyse de paris tennis : probabilités, value, mises, suivi.", no_args_is_help=True)
 pd.set_option("display.width", 220)
@@ -134,10 +132,12 @@ def bankroll():
 
 
 @app.command()
-def dashboard():
-    """Ouvre le tableau de bord dans le navigateur."""
-    # Depuis la racine du projet, pour lire .streamlit/config.toml.
-    subprocess.run([sys.executable, "-m", "streamlit", "run", str(ROOT / "dashboard" / "app.py")], check=False, cwd=ROOT)
+def dashboard(port: int = typer.Option(8501, help="Port local de l'application")):
+    """Lance l'application (http://localhost:8501), à ouvrir dans le navigateur."""
+    from tennisvalue.web.api import run
+
+    typer.echo(f"Application : http://localhost:{port}  (Ctrl+C pour arrêter)")
+    run(port)
 
 
 if __name__ == "__main__":

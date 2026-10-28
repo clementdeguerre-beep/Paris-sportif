@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tennis Value</title>
+  <link rel="icon" href="/static/icone.png">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header>
+    <a class="brand" href="#/matchs"><img src="/static/icone.png" alt=""><span>TENNIS <b>VALUE</b></span></a>
+    <div class="status-pill" id="status-pill"><span class="dot"></span><span class="txt">Chargement…</span></div>
+    <div class="header-actions">
+      <button class="btn" id="btn-update" title="Récupère les relevés faits automatiquement par GitHub">⟳ <span class="lbl">Mettre à jour</span></button>
+      <button class="btn" id="btn-fetch" title="Nouveau relevé tout de suite (≈ 2 crédits The Odds API par tournoi ouvert)">📡 <span class="lbl">Relever maintenant</span></button>
+      <button class="btn primary slip-toggle" id="btn-slip">Pari <span id="slip-count"></span></button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav id="nav">
+      <a class="item" href="#/matchs" data-page="matchs">🎾 <span>Matchs</span><span class="count" id="count-matchs"></span></a>
+      <a class="item" href="#/tendances" data-page="tendances">📈 <span>Tendances</span></a>
+      <a class="item" href="#/paris" data-page="paris">📒 <span>Mes paris</span><span class="count" id="count-paris"></span></a>
+      <a class="item" href="#/analyse" data-page="analyse">📊 <span>Analyse</span></a>
+      <a class="item" href="#/reglages" data-page="reglages">⚙️ <span>Réglages</span></a>
+      <h4>Tournois</h4>
+      <div id="nav-tournaments"></div>
+      <p class="disclaimer">Aucun pari n'est sûr : une value positive est une espérance sur beaucoup de paris, jamais une
+        garantie. Jouer comporte des risques : endettement, dépendance. Joueurs Info Service : 09 74 75 13 13 (appel non surtaxé).</p>
+    </nav>
+
+    <main id="main"></main>
+
+    <aside class="slip" id="slip"></aside>
+  </div>
+
+  <div id="overlay" class="overlay hidden"><div class="box"><div class="spinner"></div><div id="overlay-text"></div></div></div>
+  <div id="toast" class="toast hidden"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

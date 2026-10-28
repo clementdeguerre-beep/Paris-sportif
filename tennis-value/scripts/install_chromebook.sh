@@ -58,7 +58,7 @@ Type=Application
 Name=Tennis Value
 Comment=Paris tennis : value bets, mises conseillées, suivi de bankroll
 Exec=$DEST/tennis-value/scripts/lancer.sh
-Icon=$DEST/tennis-value/dashboard/icone.png
+Icon=$DEST/tennis-value/src/tennisvalue/web/static/icone.png
 Terminal=false
 Categories=Utility;
 DESKTOP

@@ -1,7 +1,7 @@
 """Suivi de mes paris réels : enregistrement, règlement, CLV, bankroll."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
@@ -18,7 +18,8 @@ def add_bet(con, *, match: str, selection: str, book: str, odds: float, stake: f
     row = con.execute(
         """INSERT INTO bets (placed_at, event_id, tour, match, selection, book, odds, stake, p_decision, ev, note)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING bet_id""",
-        [datetime.now(), event_id, tour, match, selection, book, odds, stake, p_decision, ev, note],
+        [datetime.now(timezone.utc).replace(tzinfo=None), event_id, tour, match, selection, book, odds, stake,
+         p_decision, ev, note],   # placed_at en UTC, comme les autres horodatages
     ).fetchone()
     return int(row[0])
 

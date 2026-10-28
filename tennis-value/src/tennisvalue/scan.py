@@ -20,6 +20,7 @@ from tennisvalue import db
 from tennisvalue.config import Settings
 from tennisvalue.ingest.oddsapi import match_player, tournament_context
 from tennisvalue.market.devig import fair_two_way
+from tennisvalue.market.flux import is_french
 from tennisvalue.market.staking import StakingRules, expected_value, recommended_stake
 from tennisvalue.models.features import FEATURES, add_derived
 from tennisvalue.models.markov import final_set_rule
@@ -128,7 +129,7 @@ def scan(settings: Settings, snaps: pd.DataFrame | None = None, now: datetime | 
         row["p_decision"] = p_dec
 
         # Meilleure cote ANJ de chaque côté
-        anj = g[g["book"].isin(settings.anj_books)]
+        anj = g[[is_french(b, settings.anj_books) for b in g["book"]]]
         for side in (1, 2):
             if anj.empty:
                 row[f"cote_anj_{side}"], row[f"book_{side}"] = np.nan, None

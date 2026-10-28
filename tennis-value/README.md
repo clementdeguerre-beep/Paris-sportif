@@ -33,16 +33,27 @@ Les fichiers historiques tennis-data.co.uk vont dans `data/raw/tennis-data/atp/A
 
 ## L'application
 
-Tout se fait depuis l'application, sans terminal : icône **Tennis Value** dans le lanceur (Chromebook, créée par `scripts/install_chromebook.sh`), `scripts/lancer.sh` ou `tennisvalue dashboard`. Elle s'ouvre dans le navigateur (http://localhost:8501).
+Tout se fait depuis l'application, sans terminal : icône **Tennis Value** dans le lanceur (Chromebook, créée par `scripts/install_chromebook.sh`), `scripts/lancer.sh` ou `tennisvalue dashboard`. Elle s'ouvre dans le navigateur (http://localhost:8501), thème sombre façon site de paris, et récupère toute seule les relevés de GitHub à l'ouverture puis toutes les 30 minutes.
 
 | Page | Contenu |
 |---|---|
-| **Paris du jour** | Paris conseillés en cartes (joueur, cote, bookmaker, mise, value, chance de gagner, alerte de mouvement brusque), bouton **J'ai placé ce pari** qui pré-remplit cote et mise et prévient si la cote a trop baissé ; tableau de tous les matchs à venir |
-| **Mes paris** | Bankroll, yield, CLV ; paris en attente réglés en un clic (Gagné / Perdu / Annulé, suppression d'une erreur) ; courbe de bankroll ; historique ; ajout à la main |
-| **Analyse** | Modèle contre marché et backtest des stratégies |
-| **Réglages** | Bankroll, prudence des mises, plafonds, value minimale, cotes min/max, source de décision (écrits dans `config.yaml`) ; dépôt des nouveaux fichiers tennis-data (ATP ou WTA reconnu tout seul) puis recalcul du modèle |
+| **Matchs** | Matchs à venir par tournoi. Pour chaque joueur, bouton de cote avec la meilleure cote française, le bookmaker et ▲ ▼ depuis l'ouverture ; indicateur de **flux** (vers quel joueur va l'argent, et d'où il vient) ; badge VALUE sur les paris conseillés. Un clic sur le match ouvre le détail : **évolution des cotes de chaque bookmaker**, **évolution du flux** (consensus français contre Pinnacle / Betfair), tableau des cotes par bookmaker, avis du modèle. |
+| **Tendances** | « Où va l'argent » : joueurs dont la chance estimée a le plus monté, depuis l'ouverture, sur 24 h ou 6 h, avec l'origine du mouvement et une mini-courbe. |
+| **Mon pari** (à droite) | Un clic sur une cote prépare le pari : choix du bookmaker, cote obtenue, mise conseillée (Kelly fractionné, plafonds), value à cette cote, gain potentiel ; **J'ai placé ce pari** l'enregistre (CLV automatique). L'application ne place aucun pari. |
+| **Mes paris** | Bankroll, bénéfice, yield, CLV, en jeu ; paris en attente réglés en un clic ; courbe de bankroll ; historique ; ajout à la main. |
+| **Analyse** | Modèle contre marché et backtest des stratégies. |
+| **Réglages** | Bankroll, prudence des mises, plafonds, value minimale, cotes min/max, source de décision (écrits dans `config.yaml`) ; dépôt des nouveaux fichiers tennis-data (ATP ou WTA reconnu tout seul) puis recalcul du modèle. |
 
-Barre de gauche : âge du dernier relevé, **Mettre à jour** (récupère les relevés et résultats de GitHub), **Relever les cotes maintenant** (clé locale, ou relevé lancé sur GitHub via GitHub CLI), **Recalculer le modèle** quand de nouveaux résultats sont arrivés. Heures affichées à l'heure de Paris. Les mises conseillées sont arrondies à 0,50 € et réduites si le total en jeu (paris en cours compris) dépasse le plafond d'exposition.
+### Flux : ce qu'ils mesurent
+
+Les bookmakers ne publient pas les montants misés sur chaque joueur. Le flux est **estimé à partir des cotes** : un bookmaker baisse la cote du joueur sur lequel l'argent arrive. À chaque relevé, la cote de chaque bookmaker est convertie en chance sans marge ; on suit la moyenne des bookmakers français (toute clé `_fr` de The Odds API : Betclic, Winamax, Unibet, PMU, Parions Sport, NetBet…) et celle de Pinnacle / Betfair Exchange (`market/flux.py`) :
+
+- **Argent informé** : Pinnacle / Betfair ont bougé (parieurs avisés ou information nouvelle). Si les français n'ont pas suivi, leurs cotes sont en retard.
+- **Grand public** : seuls les bookmakers français ont bougé (afflux de mises du public ou prudence du bookmaker).
+- **Contradictoire** : français et sharp bougent en sens opposés.
+- **Stable** : moins d'un point de mouvement.
+
+La mesure dépend de la fréquence des relevés : 5 par jour suffisent pour suivre une tendance, pas pour saisir les mouvements de la dernière heure (un relevé toutes les 30 à 60 minutes demande une offre payante de The Odds API).
 
 ## Ligne de commande
 
@@ -52,11 +63,11 @@ Barre de gauche : âge du dernier relevé, **Mettre à jour** (récupère les re
 | `tennisvalue fetch-odds` | Relève les cotes ANJ + Pinnacle + Betfair Exchange (The Odds API) et les horodate |
 | `tennisvalue import-odds` | Ajoute à la base les relevés faits par GitHub Actions (après `git pull`) |
 | `tennisvalue scan` | Matchs à venir : probabilités, value, mise conseillée, facteurs clés, alertes |
-| `tennisvalue dashboard` | Ouvre l'application dans le navigateur |
+| `tennisvalue dashboard` | Lance l'application (http://localhost:8501) |
 | `tennisvalue bet-add "Alcaraz - Sinner" "Carlos Alcaraz" winamax_fr 2.25 10 --p 0.46` | Enregistre un pari placé |
 | `tennisvalue bet-settle 1 gagne` | Règle un pari (`gagne`, `perdu`, `annule`) |
 | `tennisvalue bankroll` | Bilan : bankroll, yield, drawdown, CLV moyenne |
-| `pytest` | Lance les 35 tests (modèle de Markov, dé-margination, Kelly, absence de fuite de données, pages de l'application…) |
+| `pytest` | Lance les 42 tests (modèle de Markov, dé-margination, Kelly, absence de fuite de données, pages de l'application…) |
 
 **Routine conseillée** : `fetch-odds` plusieurs fois par jour (planificateur de tâches Windows ou `cron`), pour mesurer l'ouverture, les mouvements et la clôture ; `scan` avant de parier ; `bankroll` chaque semaine. Chaque semaine, retélécharger les fichiers 2026 de tennis-data puis relancer `build` pour mettre les notes à jour : dans l'application, **Réglages → Nouveaux résultats de matchs** (déposer les deux fichiers, le modèle est recalculé).
 
@@ -114,14 +125,14 @@ src/tennisvalue/
   scan.py                scanner des matchs à venir
   sync.py                relevé local ou sur GitHub, git pull, état des données
   pipeline.py, cli.py    chaîne complète et ligne de commande
-dashboard/app.py         application (Streamlit) : navigation et barre latérale
-dashboard/commun.py      formats à la française, données en cache, boutons de mise à jour
-dashboard/vues/          pages Paris du jour, Mes paris, Analyse, Réglages
+  market/flux.py         flux estimés : consensus français contre sharp, origine du mouvement
+  web/api.py             application : API JSON (FastAPI) et page web
+  web/static/            interface (HTML, CSS, JavaScript sans dépendance)
 scripts/                 installation Chromebook, lanceur, synchro, routine cron
 data/tennis.duckdb       base locale (créée par build)
 ```
 
-Choix techniques : Python, DuckDB (base analytique dans un seul fichier, rapide, sans serveur), scikit-learn, Streamlit pour le tableau de bord. Pas de scraping : uniquement des fichiers publiés et des API.
+Choix techniques : Python, DuckDB (base analytique dans un seul fichier, rapide, sans serveur), scikit-learn, FastAPI et une page web sans dépendance pour l'application. Pas de scraping : uniquement des fichiers publiés et des API.
 
 ## Limites connues de la v0.1
 
