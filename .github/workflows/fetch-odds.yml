@@ -1,4 +1,4 @@
-# Relève les cotes toutes les 3 heures de 8 h à 20 h (heure de Paris) et les
+# Relève les cotes toutes les 3 heures en journée et les
 # ajoute au dépôt dans tennis-value/data/snapshots/. Sur l'ordinateur :
 #   git pull && .venv/bin/tennisvalue import-odds
 # Prérequis : secret ODDS_API_KEY (Settings > Secrets and variables > Actions).
@@ -6,8 +6,9 @@ name: Relevé des cotes
 
 on:
   schedule:
-    - cron: "7 8-20/3 * * *"
-      timezone: "Europe/Paris"
+    # Heures UTC : 7 h, 10 h, 13 h, 16 h, 19 h, soit 8 h -> 20 h à Paris en hiver,
+    # 9 h -> 21 h en été.
+    - cron: "7 7-19/3 * * *"
   workflow_dispatch:
 
 permissions:

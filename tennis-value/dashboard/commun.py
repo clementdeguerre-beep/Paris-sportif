@@ -209,7 +209,7 @@ def sidebar(s: Settings, stt: dict) -> None:
             st.markdown(f"{dot} Cotes relevées **{ago(stt['last_fetch'])}**  \n"
                         f"{stt['upcoming']} match(s) à venir")
         if st.button("🔄 Mettre à jour", type="primary", width="stretch",
-                     help="Récupère les relevés faits automatiquement par GitHub (8 h, 11 h, 14 h, 17 h, 20 h)."):
+                     help="Récupère les relevés faits automatiquement par GitHub (8 h, 11 h, 14 h, 17 h, 20 h ; une heure plus tard en été)."):
             update(s)
         if st.button("📡 Relever les cotes maintenant", width="stretch",
                      help="Nouveau relevé tout de suite (≈ 2 crédits The Odds API par tournoi ouvert)."):

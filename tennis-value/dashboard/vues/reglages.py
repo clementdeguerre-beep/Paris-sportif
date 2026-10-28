@@ -93,7 +93,7 @@ if files and st.button("📥 Ajouter ces résultats et recalculer", type="primar
         c.rebuild(s, " ; ".join(saved) + ". Modèle recalculé.")
 
 st.subheader("Relevés automatiques")
-st.markdown("GitHub relève les cotes à **8 h, 11 h, 14 h, 17 h et 20 h** (heure de Paris), même ordinateur éteint. "
+st.markdown("GitHub relève les cotes à **8 h, 11 h, 14 h, 17 h et 20 h** (une heure plus tard en été), même ordinateur éteint. "
             "Le bouton **🔄 Mettre à jour** les récupère.")
 if s.odds_api_key:
     st.markdown("- Clé The Odds API présente sur cet ordinateur : « Relever maintenant » l'utilise directement.")
