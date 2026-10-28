@@ -99,7 +99,7 @@ Coût : 5 relevés par jour × 2 crédits × nombre de tournois ouverts, soit en
 
 ### Relevés automatiques avec GitHub Actions (ordinateur éteint)
 
-Le workflow `.github/workflows/fetch-odds.yml` lance `fetch-odds --export` à 8 h, 11 h, 14 h, 17 h et 20 h (heure de Paris en hiver, une heure plus tard en été), même ordinateur éteint, puis ajoute chaque relevé au dépôt dans `data/snapshots/`. Il remplace la routine `cron` : ne pas utiliser les deux, sinon chaque créneau coûte deux fois des crédits.
+Le workflow `.github/workflows/fetch-odds.yml` lance `fetch-odds --export` vers 8 h 30, 11 h 30, 14 h 30, 17 h 30 et 20 h 30 (heure de Paris en hiver, une heure plus tard en été), même ordinateur éteint, puis ajoute chaque relevé au dépôt dans `data/snapshots/`. Il remplace la routine `cron` : ne pas utiliser les deux, sinon chaque créneau coûte deux fois des crédits.
 
 **En une commande (Chromebook avec Linux activé, Debian, Ubuntu)** : installe le projet dans `~/Paris-sportif`, lance `build`, ajoute l'icône Tennis Value au lanceur, enregistre la clé comme secret GitHub, lance un premier relevé puis ouvre l'application.
 

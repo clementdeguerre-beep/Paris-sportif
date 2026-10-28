@@ -626,7 +626,7 @@ async function renderReglages() {
       <div class="card"><h3>📥 Nouveaux résultats de matchs</h3>
         <p>Une fois par semaine : sur <a href="http://www.tennis-data.co.uk/alldata.php" target="_blank" rel="noopener">tennis-data.co.uk</a>, télécharge les fichiers Excel de la saison (hommes et femmes), puis dépose-les ici. Le modèle est ensuite recalculé.</p>
         <label class="drop" id="drop">Glisse les fichiers .xlsx ici, ou clique pour les choisir<input id="files" type="file" accept=".xlsx" multiple class="hidden"></label></div>
-      <div class="card wide"><h3>📡 Relevés de cotes</h3><p>GitHub relève les cotes à <b>8 h, 11 h, 14 h, 17 h et 20 h</b> (une heure plus tard en été), même ordinateur éteint. L'application les récupère toute seule à l'ouverture puis toutes les 30 minutes (bouton ⟳ pour forcer).
+      <div class="card wide"><h3>📡 Relevés de cotes</h3><p>GitHub relève les cotes vers <b>8 h 30, 11 h 30, 14 h 30, 17 h 30 et 20 h 30</b> (une heure plus tard en été), même ordinateur éteint. L'application les récupère toute seule à l'ouverture puis toutes les 30 minutes (bouton ⟳ pour forcer).
         Les flux d'argent réels de <b>Polymarket</b> sont relevés en même temps, gratuitement.
         ${st.can_fetch === "local" ? "« Relever maintenant » utilise la clé The Odds API de cet ordinateur." : st.can_fetch === "github" ? "« Relever maintenant » lance un relevé sur GitHub (1 à 2 minutes)." : "« Relever maintenant » n'est pas disponible : lancer scripts/install_chromebook.sh."}</p></div>
     </div>`;

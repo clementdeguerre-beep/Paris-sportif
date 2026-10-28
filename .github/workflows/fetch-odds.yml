@@ -7,9 +7,10 @@ name: Relevé des cotes
 
 on:
   schedule:
-    # Heures UTC : 7 h, 10 h, 13 h, 16 h, 19 h, soit 8 h -> 20 h à Paris en hiver,
-    # 9 h -> 21 h en été.
-    - cron: "7 7-19/3 * * *"
+    # Heures UTC : 7 h 31, 10 h 31, 13 h 31, 16 h 31, 19 h 31, soit 8 h 30 -> 20 h 30 à
+    # Paris en hiver, 9 h 30 -> 21 h 30 en été. À la demi-heure : GitHub, très chargé en
+    # début d'heure, y retarde ou saute moins de relevés planifiés.
+    - cron: "31 7-19/3 * * *"
   workflow_dispatch:
     inputs:
       cotes:

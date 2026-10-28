@@ -94,6 +94,6 @@ else
 fi
 
 echo
-echo "Terminé. Les relevés tournent sur GitHub à 8 h, 11 h, 14 h, 17 h et 20 h (une heure plus tard en été)."
+echo "Terminé. Les relevés tournent sur GitHub vers 8 h 30, 11 h 30, 14 h 30, 17 h 30 et 20 h 30 (une heure plus tard en été)."
 echo "Pour ouvrir l'application : icône « Tennis Value » dans le lanceur (dossier Applications Linux)."
 "$DEST/tennis-value/scripts/lancer.sh"
