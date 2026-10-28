@@ -90,7 +90,6 @@ else
   fi
   git -C "$DEST" pull -q --ff-only
   .venv/bin/tennisvalue import-odds
-  .venv/bin/tennisvalue import-polymarket
 fi
 
 echo

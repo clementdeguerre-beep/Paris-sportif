@@ -126,7 +126,16 @@ def name_candidates(full_name: str) -> list[str]:
     return list(dict.fromkeys(cands))
 
 
-def match_player(full_name: str, known_keys: set[str]) -> str | None:
-    """Retrouve la clé tennis-data d'un joueur ; None si inconnu ou ambigu."""
-    hits = [c for c in name_candidates(full_name) if c in known_keys]
+def match_player(full_name: str, known_keys, counts: dict | None = None) -> str | None:
+    """Retrouve la clé tennis-data d'un joueur ; None si inconnu.
+
+    Avec `counts` (matchs par clé), on considère aussi les clés avec d'autres initiales
+    (« Leylah Fernandez » : « fernandez l » et « fernandez l a ») et on garde celle qui a
+    le plus de matchs : tennis-data écrit parfois le même joueur de deux façons.
+    """
+    cands = name_candidates(full_name)
+    hits = [c for c in cands if c in known_keys]
+    if counts:
+        hits += [k for c in cands for k in known_keys if k.startswith(c + " ")]
+        return max(hits, key=lambda k: counts.get(k, 0)) if hits else None
     return hits[0] if hits else None

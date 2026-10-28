@@ -85,6 +85,9 @@ def test_odds_api_parsing_and_names():
     assert "alcaraz c" in name_candidates("Carlos Alcaraz")
     assert match_player("Felix Auger-Aliassime", {"auger aliassime f"}) == "auger aliassime f"
     assert match_player("Juan Manuel Cerundolo", {"cerundolo j m"}) == "cerundolo j m"
+    keys = {"fernandez l": 8, "fernandez l a": 278, "fernandez m": 50}      # même joueuse écrite de deux façons
+    assert match_player("Leylah Fernandez", set(keys), keys) == "fernandez l a"
+    assert match_player("Leylah Fernandez", set(keys)) == "fernandez l"
     ctx = tournament_context("tennis_atp_french_open")
     assert ctx["surface"] == "Clay" and ctx["best_of"] == 5
     assert tournament_context("tennis_wta_wimbledon")["best_of"] == 3

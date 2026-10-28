@@ -15,7 +15,8 @@ from tennisvalue.config import Settings
 from tennisvalue.ingest.tennisdata import load_all
 from tennisvalue.market.devig import fair_two_way
 from tennisvalue.models import ensemble
-from tennisvalue.models.features import build_features
+from tennisvalue.models.explain import GROUPS, effects
+from tennisvalue.models.features import FEATURE_VERSION, FEATURES, build_features
 
 TEST_SEASONS = list(range(2019, 2027))
 
@@ -53,7 +54,7 @@ def build(settings: Settings, log=print) -> pd.DataFrame:
         final[tour] = ensemble.fit(train, "logit")
     last_rank = _last_ranks(matches)
     with open(settings.models_dir / "live_model.pkl", "wb") as fh:
-        pickle.dump({"models": final, "states": states, "last_rank": last_rank,
+        pickle.dump({"models": final, "states": states, "last_rank": last_rank, "feature_version": FEATURE_VERSION,
                      "data_until": str(matches.date.max()), "built_at": datetime.now().isoformat()}, fh)
 
     con = db.connect(settings.db_path)
@@ -61,6 +62,43 @@ def build(settings: Settings, log=print) -> pd.DataFrame:
     db.write_table(con, "features", feats)
     con.close()
     return feats
+
+
+def factor_weights(feats: pd.DataFrame, models: dict) -> pd.DataFrame:
+    """Poids de chaque famille de facteurs dans le modèle final : effet moyen (en points de %)
+    sur les matchs de la dernière saison, et part des matchs où elle pèse au moins 3 points."""
+    rows = []
+    for tour, model in models.items():
+        g = feats[(feats.tour == tour) & (feats.season == feats.season.max()) & ~feats.walkover]
+        eff = effects(model, g[FEATURES].to_numpy(float))
+        for key, v in eff.items():
+            rows.append({"tour": tour, "famille": key, "nom": GROUPS[key][0], "effet_moyen_pts": 100 * np.abs(v).mean(),
+                         "part_3pts": float((np.abs(v) >= 0.03).mean())})
+    return pd.DataFrame(rows)
+
+
+def public_bias(feats: pd.DataFrame) -> pd.DataFrame:
+    """Les bookmakers « grand public » (Bet365) face à Pinnacle, selon le classement du mieux classé.
+
+    ecart_pts : chance du mieux classé selon Bet365 - selon Pinnacle (sans marge) ;
+    yield_* : rendement d'un euro misé à la cote Bet365 sur le mieux classé, ou sur son adversaire.
+    """
+    d = feats[feats.completed & feats.p_ps.notna() & feats.p_b365.notna() & feats.season.isin(TEST_SEASONS)]
+    b1 = d.rank_1.fillna(9999) <= d.rank_2.fillna(9999)
+    x = pd.DataFrame({
+        "tour": d.tour, "rank": np.where(b1, d.rank_1, d.rank_2), "y": np.where(b1, d.y, 1 - d.y),
+        "p365": np.where(b1, d.p_b365, 1 - d.p_b365), "pps": np.where(b1, d.p_ps, 1 - d.p_ps),
+        "o_fav": np.where(b1, d.odds_b365_1, d.odds_b365_2), "o_out": np.where(b1, d.odds_b365_2, d.odds_b365_1),
+    })
+    x["tranche"] = pd.cut(x["rank"], [0, 5, 10, 20, 50, 100, 100000],
+                          labels=["top 5", "6-10", "11-20", "21-50", "51-100", "> 100"])
+    rows = []
+    for (tour, tr), g in x.groupby(["tour", "tranche"], observed=True):
+        rows.append({"tour": tour, "tranche": tr, "n": len(g), "ecart_pts": 100 * (g.p365 - g.pps).mean(),
+                     "chance_reelle": g.y.mean(), "chance_pinnacle": g.pps.mean(),
+                     "yield_mieux_classe": float(np.where(g.y == 1, g.o_fav - 1, -1).mean()),
+                     "yield_adversaire": float(np.where(g.y == 0, g.o_out - 1, -1).mean())})
+    return pd.DataFrame(rows)
 
 
 def _last_ranks(m: pd.DataFrame) -> dict:
@@ -160,9 +198,12 @@ def build_all(settings: Settings, log=print) -> dict:
     info = information_test(feats)
     bt = backtest(feats, settings, log)
     settings.reports_dir.mkdir(parents=True, exist_ok=True)
+    with open(settings.models_dir / "live_model.pkl", "rb") as fh:
+        models = pickle.load(fh)["models"]
     payload = {
         "genere_le": datetime.now().isoformat(timespec="minutes"),
         "evaluation": ev, "test_information": info, "backtest": bt["summary"],
+        "poids_facteurs": factor_weights(feats, models), "biais_public": public_bias(feats),
         "details": {k: {"breakdown": v["breakdown"],
                         "kelly": {kk: vv for kk, vv in v["kelly"].items()}} for k, v in bt["details"].items()},
     }

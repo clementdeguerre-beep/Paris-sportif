@@ -121,7 +121,7 @@ aside.slip {
 .match:hover { border-color: #3a3d4b; }
 .match.value { border-left: 3px solid var(--green); }
 .match-row {
-  display: grid; grid-template-columns: 76px minmax(150px, 1fr) 206px 190px 22px; gap: 14px; align-items: center;
+  display: grid; grid-template-columns: 76px minmax(150px, 1fr) 206px 230px 22px; gap: 14px; align-items: center;
   padding: 12px 14px; cursor: pointer;
 }
 .when { font-size: 12.5px; color: var(--muted); line-height: 1.35; }
@@ -133,6 +133,7 @@ aside.slip {
 .tag.value { background: rgba(34,197,94,.15); color: var(--green); }
 .tag.bet { background: rgba(96,165,250,.15); color: var(--blue); }
 .tag.steam { background: rgba(251,191,36,.15); color: var(--gold); }
+.tag.dig { background: rgba(192,132,252,.15); color: var(--purple); }
 
 .odds { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .odd {
@@ -143,7 +144,9 @@ aside.slip {
 .odd:hover { background: #30333f; border-color: #4a4e60; }
 .odd:active { transform: scale(.97); }
 .odd.selected { background: var(--accent); border-color: var(--accent); }
-.odd.best-value { border-color: var(--green); box-shadow: inset 0 0 0 1px var(--green); }
+.odd.good-odd { border-color: var(--green); box-shadow: inset 0 0 0 1px var(--green); }
+.odd.trap-odd { border-color: #7a2e38; }
+.odd.trap-odd .val { color: #fda4af; }
 .odd .lbl { font-size: 10.5px; color: var(--muted); max-width: 92px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .odd .val { font-size: 17px; font-weight: 800; display: flex; align-items: center; gap: 3px; }
 .odd .bk { font-size: 10.5px; color: var(--faint); }
@@ -151,23 +154,17 @@ aside.slip {
 .arrow-up { color: var(--green); font-size: 11px; } .arrow-down { color: var(--red); font-size: 11px; }
 .odd.selected .arrow-up, .odd.selected .arrow-down { color: #fff; }
 
-/* argent réel (Polymarket) */
-.money .who { color: var(--text); font-weight: 700; }
-.money-bar { height: 7px; border-radius: 4px; background: #f472b6; margin: 4px 0 6px; overflow: hidden; }
-.money-bar span { display: block; height: 100%; background: #60a5fa; }
-.odds-flux { font-size: 11.5px; color: var(--faint); }
-.poly-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 16px; }
-.mini-kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
-.mini-kpis div { background: var(--panel-3); border-radius: 8px; padding: 7px 10px; display: flex; flex-direction: column; }
-.mini-kpis span { font-size: 11.5px; color: var(--muted); }
-.mini-kpis b { font-size: 15px; }
-
 /* indicateur de flux */
 .flux { font-size: 12px; color: var(--muted); }
 .flux-bar { position: relative; height: 8px; border-radius: 4px; background: var(--panel-3); margin: 4px 0 5px; overflow: hidden; }
 .flux-bar .mid { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: #4a4e60; }
 .flux-bar .fill { position: absolute; top: 0; bottom: 0; border-radius: 4px; }
 .flux .who { color: var(--text); font-weight: 600; }
+.flux > div { line-height: 1.55; }
+.flux b { color: var(--text); }
+.verdict { font-weight: 700; font-size: 12px; }
+.verdict.good, .good-text { color: var(--green) !important; } .verdict.trap, .trap-text { color: #fda4af !important; }
+.newsflag { color: var(--gold); font-size: 11.5px; }
 .origin { font-weight: 700; }
 .o-informe { color: var(--gold); } .o-public { color: var(--blue); } .o-contra { color: var(--purple); } .o-stable { color: var(--faint); }
 .bg-informe { background: var(--gold); } .bg-public { background: var(--blue); } .bg-contra { background: var(--purple); } .bg-stable { background: var(--faint); }
@@ -207,6 +204,47 @@ tr.best td { color: var(--green); font-weight: 700; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; color: var(--muted); }
 .legend span.off { opacity: .35; }
 .legend i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+
+/* facteurs, comparaison, actualités */
+.fx { display: grid; grid-template-columns: 130px minmax(60px, 1fr) 128px; gap: 10px; align-items: center; padding: 4px 0; font-size: 12.5px; }
+.fx-name { color: var(--text); }
+.fx-bar { position: relative; height: 10px; border-radius: 5px; background: var(--panel-3); overflow: hidden; }
+.fx-bar .mid { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: #4a4e60; }
+.fx-bar .fill { position: absolute; top: 0; bottom: 0; border-radius: 5px; }
+.fill.p1 { background: var(--blue); } .fill.p2 { background: #f472b6; }
+.fx-val { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fx-head { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.fx-head i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.fx-head i.p1 { background: var(--blue); } .fx-head i.p2 { background: #f472b6; }
+table.cmp td:first-child, table.cmp td:last-child { width: 38%; }
+table.cmp th { text-align: center; text-transform: none; letter-spacing: 0; font-size: 12px; font-weight: 600; color: var(--muted); white-space: normal; }
+table.cmp td { font-size: 12.5px; }
+table.cmp td.better { color: var(--green); font-weight: 700; }
+table.cmp td.better .faint { color: #4ade80; }
+table.my-odds td, table.my-odds th { padding: 7px 8px; }
+.form-str span { display: inline-block; width: 15px; text-align: center; font-weight: 800; font-size: 10.5px; border-radius: 3px; margin-right: 1px; line-height: 17px; }
+.form-str .w { background: rgba(34,197,94,.2); color: var(--green); } .form-str .l { background: rgba(255,77,94,.16); color: var(--red); }
+.news-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.news-grid h4 { margin: 2px 0 6px; font-size: 13.5px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.news-item { padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px; line-height: 1.4; }
+.news-item a { color: var(--text); text-decoration: none; } .news-item a:hover { text-decoration: underline; }
+.news-item .faint { font-size: 11.5px; margin-top: 2px; }
+.ntag { font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 4px; margin-left: 4px; white-space: nowrap; }
+.ntag.blessure { background: rgba(255,77,94,.16); color: var(--red); } .ntag.fatigue { background: rgba(251,191,36,.15); color: var(--gold); }
+.ntag.moral { background: rgba(192,132,252,.16); color: var(--purple); } .ntag.confiance { background: rgba(34,197,94,.16); color: var(--green); }
+
+/* bons coups */
+.picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.pick { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+.pick.good { border-left: 3px solid var(--green); } .pick.trap { border-left: 3px solid var(--red); } .pick.dig { border-left: 3px solid var(--purple); }
+.pick .top { display: flex; gap: 10px; align-items: flex-start; }
+.pick .top > div:first-child { flex: 1; min-width: 0; }
+.pick .name { font-weight: 800; font-size: 15.5px; }
+.pick .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.pick .big { font-size: 20px; font-weight: 800; white-space: nowrap; }
+.pick .row { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--muted); }
+.pick .row b { color: var(--text); }
+.pick .actions { display: flex; gap: 8px; margin-top: 4px; }
 
 /* ------------------------------------------------------------------ coupon */
 .slip h2 { margin: 0 0 4px; font-size: 16px; display: flex; align-items: center; gap: 8px; }
@@ -301,7 +339,8 @@ tr.best td { color: var(--green); font-weight: 700; }
   .header-actions .lbl { display: none; }
   .match-row { grid-template-columns: 58px minmax(0, 1fr); }
   .match-row .odds, .match-row .flux { grid-column: 1 / -1; }
-  .detail, .explain, .form-grid, .poly-grid { grid-template-columns: 1fr; }
+  .detail, .explain, .form-grid, .news-grid { grid-template-columns: 1fr; }
+  .fx { grid-template-columns: 96px minmax(40px, 1fr) 104px; gap: 6px; }
   .kpis { grid-template-columns: repeat(2, 1fr); }
   .mover { grid-template-columns: 28px minmax(0, 1fr) 90px; }
   .mover .odds-move, .mover .spark { display: none; }

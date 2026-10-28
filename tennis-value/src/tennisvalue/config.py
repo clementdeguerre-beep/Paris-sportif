@@ -21,7 +21,6 @@ class Settings:
     models_dir: Path = ROOT / "data" / "models"
     reports_dir: Path = ROOT / "reports"
     snapshots_dir: Path = ROOT / "data" / "snapshots"   # relevés exportés par GitHub Actions
-    poly_dir: Path = ROOT / "data" / "polymarket"       # relevés Polymarket (GitHub Actions)
 
     # Sélection des paris
     decision_source: str = "sharp"   # "sharp" (défaut, cf. backtest), "model" ou "confirmed"
@@ -41,7 +40,6 @@ class Settings:
     # Bookmakers demandés (prioritaires sur odds_regions). Jusqu'à 10 bookmakers = 1 région
     # facturée au lieu de 2 pour « fr,eu » : le relevé coûte deux fois moins de crédits.
     odds_bookmakers: str = "winamax_fr,betclic_fr,unibet_fr,pmu_fr,netbet_fr,pinnacle,betfair_ex_eu"
-    poly_series: tuple = ("atp", "wta")  # circuits suivis sur Polymarket (atp inclut les Challengers)
     sharp_books: tuple = ("pinnacle", "betfair_ex_eu")
     anj_books: tuple = ("betclic_fr", "winamax_fr", "unibet_fr", "pmu_fr", "parionssport_fr", "netbet_fr")
 
@@ -49,6 +47,8 @@ class Settings:
     steam_move_pp: float = 3.0       # mouvement brusque : >= 3 points de proba…
     steam_window_min: int = 60       # … en moins de 60 minutes sur la cote sharp
     stale_gap_pp: float = 2.5        # cote en retard : écart >= 2,5 pts avec la proba sharp
+    trap_gap_pp: float = 3.0         # piège : les bookmakers français surestiment un joueur d'au moins 3 pts
+    disagree_pp: float = 8.0         # « à creuser » : mon modèle et le marché diffèrent d'au moins 8 pts
 
 
 def config_path() -> Path:

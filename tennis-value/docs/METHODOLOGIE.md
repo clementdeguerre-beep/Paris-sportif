@@ -51,11 +51,14 @@ Variables, toutes calculées avant le match et exprimées en différence joueur 
 - activité : jeux joués sur 14 jours et sur 7 jours ;
 - inactivité : log(1 + jours depuis le dernier match), plafonné à 365 ;
 - confrontations directes : (victoires J1 − victoires J2) / (total + 2) ;
-- interaction Elo × format en 3 sets gagnants.
+- interaction Elo × format en 3 sets gagnants ;
+- profil (`models/profile.py`, version 2 des variables) : surperformance (victoires − victoires attendues par l'Elo au moment du match) sur les 10 derniers matchs, sur la surface en 12 mois et dans le tournoi les années passées, rétrécie vers 0 quand il y a peu de matchs ; tie-breaks et sets décisifs gagnés moins sets gagnés (2 ans) ; matchs remontés après la perte du 1er set ; jeux du dernier match s'il date de moins de 3 jours ; matchs sur 4 jours ; reprise (matchs joués depuis une pause de 45 jours ou plus, si elle date de moins de 6 mois) ; abandon ou forfait récent (poids décroissant sur 30 jours, nul au-delà de 90) ; évolution du classement sur 3 mois.
+
+Apport mesuré du profil (walk-forward 2019-2026, mêmes matchs) : log loss ATP 0,6102 → 0,6098, WTA 0,6087 → 0,6077 ; le marché sharp reste à 0,586 / 0,583. Ajouté à la cote Pinnacle dans une régression (walk-forward 2021-2026), le profil dégrade la prédiction (ATP 0,5865 → 0,5869, WTA 0,5805 → 0,5814) : Pinnacle intègre déjà ces informations.
 
 Combinaison par régression logistique L2, sans constante, entraînée sur les données doublées (chaque match dans les deux sens) pour garantir P(A bat B) = 1 − P(B bat A). Un gradient boosting est évalué en parallèle : il ne fait pas mieux (log loss 0,6108 contre 0,6102 en ATP).
 
-Poids du modèle final (coefficients standardisés, ATP / WTA) : Markov 0,79 / 0,65 ; classement 0,33 / 0,21 ; inactivité −0,14 / −0,14 ; activité 14 j +0,07 / +0,12 ; charge 7 j −0,03 / −0,06. Lecture : plus de jeux joués sur 14 jours va avec plus de victoires (forme, ou simple effet de sélection : on joue plus quand on gagne), et ce n'est **pas** une preuve de l'effet de la fatigue. Aucun de ces facteurs n'a été testé isolément pour sa significativité.
+Poids du modèle final (coefficients standardisés, ATP / WTA) : Markov 0,81 / 0,69 ; classement 0,34 / 0,21 ; inactivité −0,15 / −0,14 ; activité 14 j +0,06 / +0,11 ; forme 10 matchs +0,06 / +0,05 ; tournoi +0,03 / +0,04 ; dernier match long −0,04 / −0,10 ; abandon récent −0,03 / −0,03. Lecture : plus de jeux joués sur 14 jours va avec plus de victoires (forme, ou simple effet de sélection : on joue plus quand on gagne), et ce n'est **pas** une preuve de l'effet de la fatigue. Aucun de ces facteurs n'a été testé isolément pour sa significativité.
 
 ## 4. Validation (`backtest/`, `pipeline.py`)
 

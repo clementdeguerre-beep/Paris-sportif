@@ -6,6 +6,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
+from conftest import make_live
 from tennisvalue import db
 from tennisvalue.web import api
 
@@ -93,23 +94,44 @@ def test_settings_and_uploads(client):
     assert client.get("/api/analysis").json() is None
 
 
-def test_polymarket_money_in_api(client, tmp_path):
-    """Marché Polymarket d'e1 avec les joueurs dans l'ordre inverse : tout doit être réorienté."""
+def _with_model(tmp_path, live, odds):
+    import pickle
+
+    (tmp_path / "models").mkdir(exist_ok=True)
+    with open(tmp_path / "models" / "live_model.pkl", "wb") as fh:
+        pickle.dump(live, fh)
     now = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
     con = db.connect(tmp_path / "t.duckdb")
-    con.execute("INSERT INTO poly_markets VALUES (?, 'c1', 'atp-x', 'atp', 'Paris', ?, 'Jannik Sinner', 'Carlos Alcaraz', "
-                "0.4, 5000, 1200, 9000)", [now, now + timedelta(hours=5)])
-    for k, (oi, side, usd) in enumerate([(1, "BUY", 900.0), (0, "SELL", 100.0), (0, "BUY", 250.0)]):   # 1 000 $ sur Alcaraz
-        con.execute("INSERT INTO poly_trades VALUES ('c1', ?, ?, ?, ?, 0.5, ?)", [now - timedelta(hours=k), oi, side, usd, f"0x{k}"])
-    con.execute("INSERT INTO poly_prices VALUES ('c1', ?, 0.42), ('c1', ?, 0.40)", [now - timedelta(hours=2), now])
+    db.append_table(con, "odds_snapshots", pd.DataFrame([dict(
+        fetched_at=now, event_id="e3", sport_key="tennis_atp_x_open", commence_time=now + timedelta(hours=5),
+        player_1="Ana Joueur3", player_2="Ana Joueur7", book=b, book_update=now, odds_1=o1, odds_2=o2) for b, o1, o2 in odds]))
     con.close()
-    e1 = {m["event_id"]: m for m in client.get("/api/matches").json()}["e1"]
-    p = e1["poly"]                                    # e1 : Alcaraz (J1) - Sinner (J2)
-    assert p["price_1"] == pytest.approx(0.6) and (p["usd_1"], p["usd_2"]) == (1000.0, 250.0)
-    assert p["share_1"] == pytest.approx(0.8) and p["n_big"] == 1
-    d = client.get("/api/matches/e1").json()["poly_detail"]
-    assert [round(x[1], 2) for x in d["prices"]] == [0.58, 0.6]
-    assert d["cumul"][-1][1] == pytest.approx(750.0) and d["big"][0]["player"] == "Carlos Alcaraz"
-    mv = client.get("/api/movers/argent").json()
-    assert (mv[0]["event_id"], mv[0]["player"], round(mv[0]["share"], 2)) == ("e1", "Carlos Alcaraz", 0.8)
-    assert client.get("/api/status").json()["poly_last"].endswith("Z")
+
+
+def test_my_odds_picks_and_news(client, tmp_path, monkeypatch):
+    _with_model(tmp_path, make_live(), [("pinnacle", 2.00, 1.87), ("winamax_fr", 2.40, 1.55)])
+    assert client.get("/api/status").json()["model_ready"]
+    e3 = {m["event_id"]: m for m in client.get("/api/matches").json()}["e3"]
+    assert (e3["verdict_1"], e3["verdict_2"]) == ("haute", "basse") and e3["ma_cote_1"] > 1
+    assert "profil_1" not in e3 and e3["news"] == {"1": None, "2": None}           # fiche et facteurs : dans le détail
+    d = client.get("/api/matches/e3").json()
+    assert d["profil_1"]["n10"] == 10 and set(d["facteurs"]) >= {"forme", "mental", "physique"}
+    p = {k: [x for x in v if x["event_id"] == "e3"] for k, v in client.get("/api/picks").json().items() if k != "seuils"}
+    assert [x["player"] for x in p["hautes"]] == ["Ana Joueur3"] and p["hautes"][0]["value"] > 0.1
+    assert [x["player"] for x in p["basses"]] == ["Ana Joueur7"] and p["basses"][0]["ecart_fr"] > 8
+    monkeypatch.setattr(api.news, "fetch", lambda name: [
+        {"title": f"{name} : douleur au poignet", "link": "https://x", "source": "L'Équipe", "published": None,
+         "tags": ["blessure"]}])
+    n = client.get("/api/matches/e3/news").json()
+    assert n["players"]["1"]["items"][0]["title"] == "Ana Joueur3 : douleur au poignet" and n["labels"]["blessure"]
+    e3 = {m["event_id"]: m for m in client.get("/api/matches").json()}["e3"]
+    assert e3["news"]["1"]["blessure"] == 1
+    assert client.get("/api/matches/inconnu/news").status_code == 404
+
+
+def test_outdated_model_asks_for_rebuild(client, tmp_path):
+    live = make_live(n=1200)
+    _with_model(tmp_path, {**live, "feature_version": 1}, [("pinnacle", 2.0, 1.87)])
+    st = client.get("/api/status").json()
+    assert not st["model_ready"] and st["model_outdated"]
+    assert client.get("/api/picks").json()["hautes"] == []

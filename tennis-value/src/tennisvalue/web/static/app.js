@@ -11,7 +11,6 @@ const euros = (x) => (x == null ? "–" : nf(Math.abs(x - Math.round(x)) < 0.005
 const signed = (s, x) => (x > 0 ? "+" : "") + s;
 const pct = (x, d = 0, sign = false) => (x == null ? "–" : (sign && x > 0 ? "+" : "") + nf(d).format(100 * x) + " %");
 const pts = (x) => (x == null ? "–" : (x > 0 ? "+" : "") + nf(1).format(x) + " pt" + (Math.abs(x) >= 2 ? "s" : ""));
-const usd = (x) => (x == null ? "–" : x >= 10000 ? `${nf(0).format(x / 1000)} k$` : x >= 1000 ? `${nf(1).format(x / 1000)} k$` : `${nf(0).format(x)} $`);
 const short = (name) => { const p = String(name || "").trim().split(/\s+/); return p.length > 1 ? p.slice(1).join(" ") : p[0]; };
 
 const DAY = new Intl.DateTimeFormat("fr-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" });
@@ -59,12 +58,12 @@ async function busy(text, fn) {
 
 /* ------------------------------------------------------------------ état */
 const S = {
-  status: null, matches: [], details: {}, open: new Set(), slip: null, page: "matchs",
-  filter: { tour: "all", tournament: null, value: false }, moversHours: 0, moversSource: "argent", oddsSide: {}, bets: null,
+  status: null, matches: [], details: {}, news: {}, open: new Set(), slip: null, page: "bons-coups",
+  filter: { tour: "all", tournament: null, value: false }, moversHours: 0, oddsSide: {}, bets: null,
 };
 const ORIGIN = {
-  "informé": { cls: "informe", label: "Argent informé" },
-  "grand public": { cls: "public", label: "Grand public" },
+  "informé": { cls: "informe", label: "Mouvement sharp" },
+  "grand public": { cls: "public", label: "Mouvement FR" },
   "contradictoire": { cls: "contra", label: "Contradictoire" },
   "stable": { cls: "stable", label: "Stable" },
 };
@@ -78,6 +77,7 @@ async function loadStatus() {
 async function loadMatches() {
   S.matches = await api("/api/matches");
   S.details = {};
+  S.news = {};
   renderTournaments();
 }
 
@@ -100,6 +100,7 @@ function renderTournaments() {
   const counts = {};
   for (const m of S.matches) counts[m.tournament] = (counts[m.tournament] || 0) + 1;
   $("#count-matchs").textContent = S.matches.length || "";
+  $("#count-picks").textContent = S.matches.reduce((n, m) => n + (m.verdict_1 === "haute") + (m.verdict_2 === "haute"), 0) || "";
   $("#nav-tournaments").innerHTML = Object.entries(counts).map(([t, n]) =>
     `<a class="item tournament ${S.filter.tournament === t ? "active" : ""}" href="#/matchs" data-act="tournament" data-t="${esc(t)}">${esc(t)}<span class="count">${n}</span></a>`
   ).join("") || `<p class="disclaimer" style="margin-top:4px">Aucun tournoi ouvert.</p>`;
@@ -190,43 +191,51 @@ function valueSide(m) { return m.statut === "VALUE" ? (m.pari === m.player_1 ? 1
 function pSide(m, side) { return m.p_decision == null ? null : side === 1 ? m.p_decision : 1 - m.p_decision; }
 
 function oddButton(m, side) {
-  const cote = m[`cote_${side}`], ouv = m[`ouv_${side}`];
+  const cote = m[`cote_${side}`], ouv = m[`ouv_${side}`], v = m[`verdict_${side}`];
   if (cote == null) return `<div class="odd" style="cursor:default"><span class="lbl">${esc(short(m[`player_${side}`]))}</span><span class="val">–</span><span class="bk">aucune cote FR</span></div>`;
   const arrow = ouv != null && cote > ouv + 1e-9 ? `<span class="arrow-up" title="Cote en hausse depuis l'ouverture (${num(ouv)})">▲</span>`
     : ouv != null && cote < ouv - 1e-9 ? `<span class="arrow-down" title="Cote en baisse depuis l'ouverture (${num(ouv)})">▼</span>` : "";
   const sel = S.slip && S.slip.ev === m.event_id && S.slip.side === side ? " selected" : "";
-  const best = valueSide(m) === side ? " best-value" : "";
-  return `<button class="odd${sel}${best}" data-act="pick" data-ev="${esc(m.event_id)}" data-side="${side}" title="Ajouter au pari">
+  const cls = v === "haute" ? " good-odd" : v === "basse" ? " trap-odd" : "";
+  const tip = [m[`ma_cote_${side}`] != null ? `Ma cote : ${num(m[`ma_cote_${side}`])}` : "", m[`cote_juste_${side}`] != null ? `cote juste (Pinnacle) : ${num(m[`cote_juste_${side}`])}` : ""].filter(Boolean).join(" · ");
+  return `<button class="odd${sel}${cls}" data-act="pick" data-ev="${esc(m.event_id)}" data-side="${side}" title="${esc(tip || "Ajouter au pari")}">
     <span class="lbl">${esc(short(m[`player_${side}`]))}</span><span class="val num">${num(cote)}${arrow}</span><span class="bk">${esc(m[`book_${side}_name`] || "")}</span></button>`;
 }
 
-function moneyLine(m) {
-  const p = m.poly;
-  if (!p || !(p.usd_1 + p.usd_2 > 0)) return "";
-  const lead = p.share_1 >= 0.5 ? 1 : 2, share = lead === 1 ? p.share_1 : 1 - p.share_1;
-  return `<div class="money" title="Argent réellement misé sur Polymarket depuis l'ouverture du marché (${p.n} transactions)">
-    <div><span class="who">💰 ${pct(share)} ${esc(short(m[`player_${lead}`]))}</span> <span class="faint">· ${usd(p.volume)} misés</span></div>
-    <div class="money-bar"><span style="width:${(100 * p.share_1).toFixed(1)}%"></span></div></div>`;
+const NEWS_TAGS = { blessure: "blessure / forfait", fatigue: "fatigue", moral: "moral en baisse" };
+function newsAlert(m) {
+  for (const side of [1, 2]) {
+    const n = m.news && m.news[side];
+    const hits = n ? Object.keys(NEWS_TAGS).filter((k) => n[k]) : [];
+    if (hits.length) return `⚠️ ${short(m[`player_${side}`])} : ${hits.map((k) => NEWS_TAGS[k]).join(", ")} dans l'actualité`;
+  }
+  return "";
 }
+const disagrees = (m) => m.historique_ok && m.ecart_modele != null && Math.abs(m.ecart_modele) >= S.status.settings.disagree_pp;
 
-function fluxBlock(m) {
-  const f = m.flux, money = moneyLine(m);
-  if (!f) return `<div class="flux">${money}<span class="faint">Pas de cote française</span></div>`;
-  if (f.n_releves < 2) return `<div class="flux">${money}<span class="faint">${money ? "Cotes : 1 seul relevé" : "1 relevé : l'évolution apparaîtra au prochain"}</span></div>`;
-  const o = ORIGIN[f.origine] || ORIGIN.stable;
-  if (money) return `<div class="flux">${money}<div class="odds-flux">Cotes : ${f.vers ? `→ ${esc(short(m[`player_${f.vers}`]))} ${pts(Math.abs(f.flux))} · <span class="origin o-${o.cls}">${o.label}</span>` : "stables"}</div></div>`;
-  const w = Math.min(Math.abs(f.flux) / 10, 1) * 50;
-  const fill = f.vers === 1 ? `right:50%;width:${w}%` : f.vers === 2 ? `left:50%;width:${w}%` : "left:49%;width:2%";
-  const who = f.vers ? `<span class="who">→ ${esc(short(m[`player_${f.vers}`]))}</span> ${pts(Math.abs(f.flux))}` : "Cotes stables";
-  return `<div class="flux" title="Flux estimé depuis l'ouverture (${f.n_releves} relevés), d'après les mouvements de cotes">
-    <div>${who}</div><div class="flux-bar"><span class="mid"></span><span class="fill bg-${o.cls}" style="${fill}"></span></div>
-    <span class="origin o-${o.cls}">${o.label}</span>${f.origine === "informé" && Math.abs(f.delta_fr ?? 0) < 1 ? ` <span class="faint">· cotes FR en retard</span>` : ""}</div>`;
+function analysisBlock(m) {
+  const lines = [];
+  if (m.ma_cote_1 != null) lines.push(`<div title="Mes cotes : d'après le niveau, la surface, la forme, le tournoi, la fatigue, les blessures, le mental et le face-à-face">🎯 Mes cotes <b class="num">${num(m.ma_cote_1)}</b> · <b class="num">${num(m.ma_cote_2)}</b></div>`);
+  for (const side of [1, 2]) {
+    const v = m[`verdict_${side}`], who = esc(short(m[`player_${side}`]));
+    if (v === "haute") lines.push(`<div class="verdict good">✅ ${who} : cote trop haute (${pct(m[`value_${side}`], 0, true)})</div>`);
+    else if (v === "basse") lines.push(`<div class="verdict trap">⛔ ${who} : cote trop basse (surcoté de ${num(m[`ecart_fr_${side}`], 0)} pts)</div>`);
+  }
+  const f = m.flux;
+  if (f && f.n_releves >= 2 && f.vers) {
+    const o = ORIGIN[f.origine] || ORIGIN.stable;
+    lines.push(`<div class="faint" title="Évolution de la chance donnée par les bookmakers depuis l'ouverture">📉 → ${esc(short(m[`player_${f.vers}`]))} ${pts(Math.abs(f.flux))} · <span class="origin o-${o.cls}">${o.label}</span></div>`);
+  }
+  const alert = newsAlert(m);
+  if (alert) lines.push(`<div class="newsflag">${esc(alert)}</div>`);
+  return `<div class="flux">${lines.join("") || `<span class="faint">${m.p_model == null && !S.status.model_ready ? "Modèle à calculer" : "Pas de cote Pinnacle : pas de verdict"}</span>`}</div>`;
 }
 
 function matchCard(m) {
   const vs = valueSide(m), open = S.open.has(m.event_id);
   const tags = [];
   if (vs) tags.push(`<span class="tag value">VALUE ${pct(m.value, 1, true)} sur ${esc(short(m.pari))}</span>`);
+  if (disagrees(m)) tags.push(`<span class="tag dig" title="Mon modèle et le marché diffèrent d'au moins ${num(S.status.settings.disagree_pp, 0)} points">🔍 À creuser</span>`);
   if (m.steam) tags.push(`<span class="tag steam" title="La cote Pinnacle / Betfair a bougé brusquement : vérifier l'actualité (forfait, blessure)">⚡ Mouvement brusque</span>`);
   if (m.my_bets && m.my_bets.length) tags.push(`<span class="tag bet">✔ Parié</span>`);
   return `<div class="match${vs ? " value" : ""}${open ? " open" : ""}" id="m-${esc(m.event_id)}">
@@ -234,7 +243,7 @@ function matchCard(m) {
       <div class="when"><b>${hm(m.start)}</b>${esc(dayLabel(m.start))}</div>
       <div class="players"><div>${esc(m.player_1)}</div><div>${esc(m.player_2)}</div>${tags.length ? `<div class="tags">${tags.join("")}</div>` : ""}</div>
       <div class="odds">${oddButton(m, 1)}${oddButton(m, 2)}</div>
-      ${fluxBlock(m)}
+      ${analysisBlock(m)}
       <div class="chev">›</div>
     </div>
     ${open ? `<div class="detail" id="d-${esc(m.event_id)}">${S.details[m.event_id] ? "" : `<p class="muted">Chargement…</p>`}</div>` : ""}
@@ -243,10 +252,11 @@ function matchCard(m) {
 
 function banners() {
   const st = S.status, out = [];
-  if (!st.model_ready) out.push(`<div class="banner warn"><span>🧮</span><span class="grow">Le modèle n'est pas encore calculé : les paris conseillés et les mises n'apparaîtront qu'après (1 à 3 minutes).</span><button class="btn small primary" data-act="rebuild">Calculer le modèle</button></div>`);
+  if (st.model_outdated) out.push(`<div class="banner warn"><span>🧮</span><span class="grow">Nouveau modèle (forme, surface, tournoi, fatigue, blessures, mental) : à calculer une fois pour obtenir mes cotes (1 à 3 minutes).</span><button class="btn small primary" data-act="rebuild">Calculer le modèle</button></div>`);
+  else if (!st.model_ready) out.push(`<div class="banner warn"><span>🧮</span><span class="grow">Le modèle n'est pas encore calculé : mes cotes, les verdicts et les mises n'apparaîtront qu'après (1 à 3 minutes).</span><button class="btn small primary" data-act="rebuild">Calculer le modèle</button></div>`);
   else if (st.results_newer) out.push(`<div class="banner warn"><span>🆕</span><span class="grow">De nouveaux résultats de matchs sont arrivés.</span><button class="btn small primary" data-act="rebuild">Recalculer le modèle</button></div>`);
   if (st.data_until && (Date.now() - Date.parse(st.data_until)) / 864e5 > 10)
-    out.push(`<div class="banner warn"><span>📅</span><span class="grow">Résultats arrêtés au ${esc(new Date(st.data_until).toLocaleDateString("fr-FR"))} : ajoute les nouveaux fichiers tennis-data dans Réglages.</span><a class="btn small" href="#/reglages">Réglages</a></div>`);
+    out.push(`<div class="banner warn"><span>📅</span><span class="grow">Résultats arrêtés au ${esc(new Date(st.data_until).toLocaleDateString("fr-FR"))} : la forme récente des joueurs n'est plus à jour. Ajoute les nouveaux fichiers tennis-data dans Réglages.</span><a class="btn small" href="#/reglages">Réglages</a></div>`);
   return out.join("");
 }
 
@@ -262,7 +272,7 @@ function renderMatchs() {
   const chip = (act, val, label, active) => `<button class="chip${active ? " active" : ""}" data-act="${act}" data-v="${val}">${label}</button>`;
   $("#main").innerHTML = `
     <h1>${f.tournament ? esc(f.tournament) : "Matchs à venir"}</h1>
-    <p class="subtitle">Meilleure cote française pour chaque joueur (▲ ▼ : depuis l'ouverture). Clique sur une cote pour enregistrer un pari, sur un match pour voir l'évolution des cotes et des flux.</p>
+    <p class="subtitle">Meilleure cote française pour chaque joueur (▲ ▼ : depuis l'ouverture), encadrée en vert si elle est trop haute, en rouge si elle est trop basse. Clique sur un match pour mes cotes, les points forts et faibles, l'actualité et l'évolution des cotes.</p>
     ${banners()}
     <div class="toolbar">
       ${chip("tour", "all", "Tous", f.tour === "all")}${chip("tour", "ATP", "ATP", f.tour === "ATP")}${chip("tour", "WTA", "WTA", f.tour === "WTA")}
@@ -272,7 +282,7 @@ function renderMatchs() {
     </div>
     ${ms.length ? [...groups].map(([t, list]) => `<div class="group"><div class="group-title"><span class="tour-badge">${esc(list[0].tour)}</span>${esc(t)}</div>${list.map(matchCard).join("")}</div>`).join("")
       : `<div class="empty"><div class="big">🎾</div>${S.matches.length ? "Aucun match pour ce filtre." : "Aucun match à venir dans les relevés.<br>Clique sur <b>⟳ Mettre à jour</b> ; s'il n'y a toujours rien, aucun tournoi couvert n'est ouvert aux paris."}</div>`}
-    <p class="footer-note">Flux estimés d'après les mouvements de cotes : les bookmakers ne publient pas les montants misés. « Argent informé » : Pinnacle / Betfair ont bougé ; « Grand public » : seuls les bookmakers français ont bougé.</p>`;
+    <p class="footer-note">Mes cotes : mon modèle, d'après le niveau, la surface, la forme, le tournoi, la fatigue, les blessures, le mental et le face-à-face. Verdict : meilleure cote française comparée à la cote juste (Pinnacle sans marge). 📉 « Mouvement sharp » : Pinnacle / Betfair ont bougé ; « Mouvement FR » : seuls les bookmakers français ont bougé.</p>`;
   for (const ev of S.open) if (S.details[ev]) renderDetail(ev);
 }
 
@@ -293,14 +303,14 @@ function renderDetail(ev) {
   const f = d.flux, o = f ? ORIGIN[f.origine] || ORIGIN.stable : null;
   const c = d.consensus || [];
   const firstFr = c.find((r) => r[1] != null), lastFr = [...c].reverse().find((r) => r[1] != null);
-  let fluxText = "Pas encore assez de relevés pour mesurer un flux.";
+  let moveText = "Pas encore assez de relevés pour mesurer un mouvement.";
   if (f && f.n_releves >= 2) {
     const who = f.vers ? d[`player_${f.vers}`] : null;
-    fluxText = `${f.n_releves} relevés depuis ${esc(when(f.debut))}. `;
-    if (firstFr && lastFr) fluxText += `Chance de <b>${esc(d.player_1)}</b> selon les bookmakers français : ${pct(firstFr[1])} → <b>${pct(lastFr[1])}</b> (${pts(f.delta_fr)}). `;
-    if (f.delta_sharp != null) fluxText += `Selon Pinnacle / Betfair : ${pts(f.delta_sharp)}. `;
-    fluxText += who ? `<br><span class="origin o-${o.cls}">${o.label}</span> : l'argent semble aller sur <b>${esc(who)}</b>.` : `<br>Pas de mouvement net.`;
-    if (d.flux_24h && d.flux_24h.n_releves >= 2 && d.flux_24h.n_releves < f.n_releves) fluxText += ` Sur 24 h : ${pts(d.flux_24h.flux)} pour ${esc(short(d.player_1))}.`;
+    moveText = `${f.n_releves} relevés depuis ${esc(when(f.debut))}. `;
+    if (firstFr && lastFr) moveText += `Chance de <b>${esc(d.player_1)}</b> selon les bookmakers français : ${pct(firstFr[1])} → <b>${pct(lastFr[1])}</b> (${pts(f.delta_fr)}). `;
+    if (f.delta_sharp != null) moveText += `Selon Pinnacle / Betfair : ${pts(f.delta_sharp)}. `;
+    moveText += who ? `<br><span class="origin o-${o.cls}">${o.label}</span> : les cotes évoluent en faveur de <b>${esc(who)}</b>.` : `<br>Pas de mouvement net.`;
+    if (d.flux_24h && d.flux_24h.n_releves >= 2 && d.flux_24h.n_releves < f.n_releves) moveText += ` Sur 24 h : ${pts(d.flux_24h.flux)} pour ${esc(short(d.player_1))}.`;
   }
   const shown = d.books.filter((b) => b.french || b.sharp), others = d.books.length - shown.length;
   const best1 = Math.max(...d.books.filter((b) => b.french).map((b) => b.odds_1)), best2 = Math.max(...d.books.filter((b) => b.french).map((b) => b.odds_2));
@@ -308,69 +318,153 @@ function renderDetail(ev) {
       <td class="r num"${b.french && b.odds_1 === best1 ? ' style="color:var(--green);font-weight:800"' : ""}>${num(b.odds_1)}</td>
       <td class="r num"${b.french && b.odds_2 === best2 ? ' style="color:var(--green);font-weight:800"' : ""}>${num(b.odds_2)}</td>
       <td class="r num">${pct(b.margin, 1)}</td></tr>`).join("");
-  const pm = d.p_model, ps = d.p_sharp;
-  const factors = (d.facteurs_cles || "").replace(/ \([+-]?\d+(\.\d+)?\)/g, "").replace(/→ J1/g, `→ ${short(d.player_1)}`).replace(/→ J2/g, `→ ${short(d.player_2)}`).split(" ; ").filter(Boolean);
   box.innerHTML = `
+    ${myOddsCard(d)}
+    ${factorsCard(d)}
     <div class="card"><h3>📉 Évolution des cotes<span class="right"><span class="seg">
       <button class="${side === 1 ? "active" : ""}" data-act="side" data-ev="${esc(ev)}" data-side="1">${esc(short(d.player_1))}</button>
       <button class="${side === 2 ? "active" : ""}" data-act="side" data-ev="${esc(ev)}" data-side="2">${esc(short(d.player_2))}</button></span></span></h3>
       <div id="co-${esc(ev)}"></div></div>
-    <div class="card"><h3>💶 Flux estimé ${o ? `<span class="origin o-${o.cls}" style="font-size:12px">${o.label}</span>` : ""}</h3>
-      <div id="cf-${esc(ev)}"></div><p>${fluxText}</p></div>
-    ${polyCard(d, ev)}
+    ${compareCard(d)}
+    <div class="card wide" id="news-${esc(ev)}"><h3>📰 Actualités de la semaine</h3><p class="muted">Recherche des derniers articles…</p></div>
+    <div class="card"><h3>📈 Qui fait bouger les cotes ${o ? `<span class="origin o-${o.cls}" style="font-size:12px">${o.label}</span>` : ""}</h3>
+      <div id="cf-${esc(ev)}"></div><p>${moveText}</p></div>
     <div class="card"><h3>🏦 Cotes par bookmaker</h3><div class="table-wrap"><table>
       <tr><th>Bookmaker</th><th class="r">${esc(short(d.player_1))}</th><th class="r">${esc(short(d.player_2))}</th><th class="r">Marge</th></tr>${rows}</table></div>
-      ${others ? `<p class="faint">${others} bookmaker${others > 1 ? "s" : ""} étranger${others > 1 ? "s" : ""} non affiché${others > 1 ? "s" : ""}.</p>` : ""}</div>
-    <div class="card"><h3>🧠 Avis</h3>
-      ${ps != null ? `<p>Chance de <b>${esc(d.player_1)}</b> : <b>${pct(ps)}</b> selon le marché sharp${pm != null ? `, ${pct(pm)} selon notre modèle` : ""}.</p>` : `<p>Pas de cote Pinnacle / Betfair : pas d'estimation fiable.</p>`}
-      ${d.statut === "VALUE" ? `<p style="color:var(--green)">Pari conseillé : <b>${esc(d.pari)}</b> à ${num(d.cote)} (value ${pct(d.value, 1, true)}).</p>` : d.statut ? `<p>Pas de value au-dessus de ton seuil pour l'instant.</p>` : `<p>Modèle non calculé.</p>`}
-      ${factors.length ? `<p>Facteurs du modèle : ${factors.map(esc).join(", ")}.</p>` : ""}
-      ${d.alerte_donnees ? `<p class="faint">⚠️ ${esc(d.alerte_donnees.replace(/[ ;]+$/, ""))}</p>` : ""}
-      ${d.steam ? `<p style="color:var(--gold)">⚡ Mouvement brusque de la cote sharp : vérifier l'actualité avant de parier.</p>` : ""}
-    </div>`;
+      ${others ? `<p class="faint">${others} bookmaker${others > 1 ? "s" : ""} étranger${others > 1 ? "s" : ""} non affiché${others > 1 ? "s" : ""}.</p>` : ""}</div>`;
   const oddsSeries = d.series.filter((s) => s.french || s.sharp).map((s) => ({ name: s.name, color: colorFor(s.key, s.sharp), dashed: s.sharp,
     points: s.points.map((p) => [Date.parse(p[0]), p[side]]) }));
   lineChart($(`#co-${CSS.escape(ev)}`), { series: oddsSeries, yFmt: (v) => num(v) });
-  const pd_ = d.poly_detail;
   lineChart($(`#cf-${CSS.escape(ev)}`), {
     series: [
       { name: `Bookmakers français (chance de ${short(d.player_1)})`, color: "#60a5fa", width: 2.5, points: c.filter((r) => r[1] != null).map((r) => [Date.parse(r[0]), 100 * r[1]]) },
       { name: "Pinnacle / Betfair", color: "#e5e7eb", dashed: true, points: c.filter((r) => r[2] != null).map((r) => [Date.parse(r[0]), 100 * r[2]]) },
-      ...(pd_ ? [{ name: "Polymarket", color: "#fbbf24", points: pd_.prices.map((r) => [Date.parse(r[0]), 100 * r[1]]) }] : []),
+      ...(d.p_model != null ? [{ name: "Mon modèle", color: "#22c55e", points: c.length ? [[Date.parse(c[0][0]), 100 * d.p_model], [Date.parse(c[c.length - 1][0]), 100 * d.p_model]] : [] }] : []),
     ], yFmt: (v) => `${num(v, 0)} %`,
   });
-  if (pd_ && pd_.cumul.length) lineChart($(`#cp-${CSS.escape(ev)}`), {
-    series: [{ name: `Argent net : vers ${short(d.player_1)} (+) ou ${short(d.player_2)} (−)`, color: "#22c55e", width: 2.5,
-      points: pd_.cumul.map((r) => [Date.parse(r[0]), r[1]]) }],
-    yFmt: (v) => `${v > 0 ? "+" : ""}${usd(Math.abs(v)).replace(/^/, v < 0 ? "−" : "")}`, height: 200,
-  });
+  loadNews(ev);
 }
 
-function polyCard(d, ev) {
-  const p = d.poly, pd_ = d.poly_detail;
-  if (!p) return "";
-  const has = p.usd_1 + p.usd_2 > 0;
-  const lead = p.share_1 >= 0.5 ? 1 : 2, share = lead === 1 ? p.share_1 : 1 - p.share_1;
-  let recent = "";
-  if (p.usd_24h > 0 && p.share_1_24h != null) {
-    const l24 = p.share_1_24h >= 0.5 ? 1 : 2, s24 = l24 === 1 ? p.share_1_24h : 1 - p.share_1_24h;
-    recent = ` Sur 24 h : <b>${pct(s24)}</b> sur ${esc(short(d[`player_${l24}`]))} (${usd(p.usd_24h)})${l24 !== lead ? " : <b>l'argent récent change de camp</b>" : ""}.`;
+const side_ = (p, s) => (p == null ? null : s === 1 ? p : 1 - p);
+
+function myOddsCard(d) {
+  const rows = [1, 2].map((s) => {
+    const v = d[`verdict_${s}`];
+    const verdict = v === "haute" ? `<span class="verdict good">✅ Trop haute (${pct(d[`value_${s}`], 0, true)})</span>`
+      : v === "basse" ? `<span class="verdict trap">⛔ Trop basse</span>` : d[`cote_juste_${s}`] != null ? `<span class="faint">correcte</span>` : `<span class="faint">–</span>`;
+    return `<tr><td><b>${esc(d[`player_${s}`])}</b></td>
+      <td class="r num"><b>${num(d[`ma_cote_${s}`])}</b> <span class="faint">${pct(side_(d.p_model, s))}</span></td>
+      <td class="r num"><b>${num(d[`cote_juste_${s}`])}</b> <span class="faint">${pct(side_(d.p_decision, s))}</span></td>
+      <td class="r num">${pct(side_(d.p_fr, s))}</td>
+      <td class="r num"><b>${num(d[`cote_${s}`])}</b> <span class="faint">${esc(d[`book_${s}_name`] || "")}</span></td><td>${verdict}</td></tr>`;
+  }).join("");
+  const notes = [];
+  for (const s of [1, 2]) {
+    const who = esc(d[`player_${s}`]);
+    if (d[`verdict_${s}`] === "haute") {
+      const ok = d[`modele_ok_${s}`];
+      notes.push(`<p class="good-text">✅ La meilleure cote française sur <b>${who}</b> (${num(d[`cote_${s}`])} chez ${esc(d[`book_${s}_name`])}) paie plus que sa cote juste (${num(d[`cote_juste_${s}`])}) : value ${pct(d[`value_${s}`], 1, true)}.
+        ${ok == null ? "" : ok ? "Mon modèle va dans le même sens." : `Mon modèle n'est pas d'accord (ma cote : ${num(d[`ma_cote_${s}`])}) : prudence.`}</p>`);
+    } else if (d[`verdict_${s}`] === "basse") {
+      notes.push(`<p class="trap-text">⛔ Les bookmakers français donnent <b>${who}</b> à ${pct(side_(d.p_fr, s))} de chances, Pinnacle à ${pct(side_(d.p_decision, s))} (${pts(d[`ecart_fr_${s}`])}) : sa cote est trop basse. C'est souvent le cas des joueurs populaires, sur qui le grand public mise de toute façon.</p>`);
+    }
   }
-  const big = (pd_ && pd_.big) || [];
-  return `<div class="card wide"><h3>💰 Argent réel misé (Polymarket)<span class="right faint" style="font-size:12px;font-weight:400">relevé ${esc(ago(p.fetched_at))}</span></h3>
-    <div class="poly-grid">
-      <div><div id="cp-${esc(ev)}">${has ? "" : `<p class="muted">Aucune transaction pour l'instant.</p>`}</div></div>
-      <div>
-        <div class="mini-kpis">
-          <div><span>Misé au total</span><b>${usd(p.volume)}</b></div><div><span>Sur 24 h</span><b>${usd(p.volume_24h)}</b></div>
-          <div><span>Liquidité</span><b>${usd(p.liquidity)}</b></div><div><span>Chance (prix)</span><b>${pct(p.price_1)} ${esc(short(d.player_1))}</b></div>
-        </div>
-        ${has ? `<p>Depuis l'ouverture : <b>${pct(share)}</b> de l'argent sur <b>${esc(d[`player_${lead}`])}</b> (${usd(lead === 1 ? p.usd_1 : p.usd_2)} contre ${usd(lead === 1 ? p.usd_2 : p.usd_1)}).${recent}</p>` : ""}
-        ${big.length ? `<div class="table-wrap"><table><tr><th>Gros paris</th><th>Joueur</th><th class="r">Montant</th><th class="r">Chance</th></tr>
-          ${big.map((b) => `<tr><td class="faint">${esc(when(b.ts))}</td><td>${b.side === "BUY" ? "" : "vente "}${esc(short(b.player))}</td><td class="r num"><b>${usd(b.usd)}</b></td><td class="r num">${pct(b.price)}</td></tr>`).join("")}</table></div>` : ""}
-      </div>
-    </div>
-    <p class="faint" style="font-size:11.5px">Polymarket n'est pas autorisé en France : ses données publiques sont lues pour l'analyse, on n'y parie pas. Part de l'argent = achats d'un joueur + ventes de son adversaire.</p></div>`;
+  if (disagrees(d)) {
+    const s = d.ecart_modele > 0 ? 1 : 2;
+    notes.push(`<p>🔍 Mon modèle voit <b>${esc(d[`player_${s}`])}</b> à ${pct(side_(d.p_model, s))}, le marché à ${pct(side_(d.p_decision, s))}. Un tel écart vient souvent d'une information que le marché a et pas mon modèle (blessure, forfait, conditions) : lis les actualités avant de parier.</p>`);
+  }
+  if (d.statut === "VALUE") notes.push(`<p>Pari conseillé : <b>${esc(d.pari)}</b> à ${num(d.cote)}, mise conseillée <b>${euros(d.mise)}</b>.
+    <button class="btn small primary" data-act="pick" data-ev="${esc(d.event_id)}" data-side="${d.pari === d.player_1 ? 1 : 2}">Préparer ce pari</button></p>`);
+  if (d.steam) notes.push(`<p style="color:var(--gold)">⚡ Mouvement brusque de la cote Pinnacle / Betfair : vérifier l'actualité avant de parier.</p>`);
+  if (d.tournoi_connu === false) notes.push(`<p class="faint">Tournoi non retrouvé dans l'historique : le facteur « Ce tournoi » est ignoré.</p>`);
+  if (d.alerte_donnees) notes.push(`<p class="faint">⚠️ ${esc(d.alerte_donnees.replace(/[ ;]+$/, ""))}</p>`);
+  return `<div class="card wide"><h3>🎯 Mes cotes et verdict</h3><div class="table-wrap"><table class="my-odds">
+    <tr><th>Joueur</th><th class="r" title="Mon modèle : cote et chance">Ma cote</th><th class="r" title="Pinnacle / Betfair Exchange, marge retirée : cote et chance">Cote juste</th>
+      <th class="r" title="Moyenne des bookmakers français, marge retirée">Chance FR</th><th class="r">Meilleure cote FR</th><th>Verdict</th></tr>${rows}</table></div>
+    ${notes.join("") || `<p>Aucune cote française ne s'écarte assez de la cote juste pour l'instant.</p>`}
+    <p class="faint" style="font-size:11.5px">Ma cote : mon modèle, d'après les performances des joueurs. Cote juste : Pinnacle sans sa marge, qui prédit mieux que mon modèle sur 2019-2026 (onglet Analyse) ; c'est elle qui décide du verdict.</p></div>`;
+}
+
+const FACT = { niveau: "Niveau général", surface: "Surface", forme: "Forme récente", tournoi: "Ce tournoi", fatigue: "Fatigue",
+  physique: "Blessure / reprise", mental: "Mental", h2h: "Face-à-face" };
+const FACT_HELP = { niveau: "Elo, note aux points, classement, expérience", surface: "Elo et résultats sur la surface (12 mois)",
+  forme: "10 derniers matchs comparés à l'attendu, dynamique du classement, matchs enchaînés", tournoi: "Résultats dans ce tournoi les années passées",
+  fatigue: "Jeux joués sur 7 et 14 jours, longueur du dernier match", physique: "Jours sans jouer, reprise après une pause, abandon ou forfait récent",
+  mental: "Tie-breaks et sets décisifs gagnés, matchs remontés après la perte du 1er set", h2h: "Confrontations directes" };
+
+function factorsCard(d) {
+  if (!d.facteurs) return `<div class="card"><h3>🧩 Pourquoi ces chances</h3><p>Modèle non calculé, ou joueur absent de l'historique.</p></div>`;
+  const items = Object.entries(d.facteurs).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+  const max = Math.max(0.04, ...items.map(([, v]) => Math.abs(v)));
+  const bars = items.map(([k, v]) => {
+    const w = (Math.abs(v) / max) * 50, who = v > 0 ? d.player_1 : d.player_2;
+    return `<div class="fx" title="${esc(FACT_HELP[k])}"><span class="fx-name">${FACT[k]}</span>
+      <div class="fx-bar"><span class="mid"></span><span class="fill ${v > 0 ? "p1" : "p2"}" style="${v > 0 ? "right" : "left"}:50%;width:${w.toFixed(1)}%"></span></div>
+      <span class="fx-val">${Math.abs(v) < 0.005 ? `<span class="faint">égalité</span>` : `${pts(100 * Math.abs(v))} <span class="faint">${esc(short(who))}</span>`}</span></div>`;
+  }).join("");
+  return `<div class="card"><h3>🧩 Pourquoi ces chances</h3>
+    <div class="fx-head"><span><i class="p1"></i>◀ avantage ${esc(short(d.player_1))}</span><span><i class="p2"></i>avantage ${esc(short(d.player_2))} ▶</span></div>${bars}
+    <p class="faint" style="font-size:11.5px">Points de % gagnés grâce à chaque famille de facteurs selon mon modèle (survol : détail).</p></div>`;
+}
+
+const SURF_FR = { Hard: "dur", Clay: "terre battue", Grass: "gazon", Carpet: "moquette" };
+function formStr(s) { return `<span class="form-str">${[...(s || "")].map((c) => `<span class="${c === "V" ? "w" : "l"}">${c}</span>`).join("")}</span>`; }
+
+function compareCard(d) {
+  const a = d.profil_1, b = d.profil_2;
+  if (!a || !b) return "";
+  const rate = (w, n) => (w + 2) / (n + 4);
+  const wl = (w, l) => (w + l ? `${w}–${l} <span class="faint">(${pct(w / (w + l))})</span>` : `<span class="faint">aucun</span>`);
+  const rankTxt = (p) => (p.rank ? `${num(p.rank, 0)}<sup>e</sup>${p.rank_3m && p.rank_3m !== p.rank ? ` <span class="${p.rank < p.rank_3m ? "arrow-up" : "arrow-down"}">${p.rank < p.rank_3m ? "▲" : "▼"} ${num(Math.abs(p.rank_3m - p.rank), 0)}</span>` : ""}` : "–");
+  const last = (p) => (p.days_since >= 365 ? "–" : p.last_games && p.days_since <= 3 ? `il y a ${p.days_since} j (${num(p.last_games, 0)} jeux)` : `il y a ${p.days_since} j`);
+  const pause = (p) => (p.break_days ? (p.since_break === 0 ? `<b>1er match après ${p.break_days} j d'arrêt</b>` : `${p.since_break} match${p.since_break > 1 ? "s" : ""} depuis ${p.break_days} j d'arrêt`) : "pas de longue pause");
+  const inj = (p) => (p.inj_days <= 90 ? `<b>il y a ${p.inj_days} j</b>${p.inj_365 > 1 ? ` (${p.inj_365} en 1 an)` : ""}` : p.inj_365 ? `${p.inj_365} en 1 an` : "aucun");
+  // [libellé, valeur J1, valeur J2, score J1, score J2 (le plus haut est mis en avant ; null : pas de comparaison)]
+  const R = [
+    ["Classement (évolution sur 3 mois)", rankTxt(a), rankTxt(b), a.rank ? -a.rank : null, b.rank ? -b.rank : null],
+    [`Elo sur ${SURF_FR[d.surface] || "la surface"}`, num(a.elo_surf, 0), num(b.elo_surf, 0), a.elo_surf, b.elo_surf],
+    ["10 derniers matchs (le plus récent à gauche)", `${formStr(a.form10)} ${a.n10 ? `${a.w10}/${a.n10}` : ""}`, `${formStr(b.form10)} ${b.n10 ? `${b.w10}/${b.n10}` : ""}`, a.surplus10 / (a.n10 + 3), b.surplus10 / (b.n10 + 3)],
+    [`Sur ${SURF_FR[d.surface] || "la surface"} (12 mois)`, wl(a.surf_w, a.surf_n - a.surf_w), wl(b.surf_w, b.surf_n - b.surf_w), rate(a.surf_w, a.surf_n), rate(b.surf_w, b.surf_n)],
+    ["Ce tournoi (années passées)", wl(a.tourn_w, a.tourn_n - a.tourn_w), wl(b.tourn_w, b.tourn_n - b.tourn_w), rate(a.tourn_w, a.tourn_n), rate(b.tourn_w, b.tourn_n)],
+    ["Tie-breaks (2 ans)", wl(a.tb_w, a.tb_l), wl(b.tb_w, b.tb_l), rate(a.tb_w, a.tb_w + a.tb_l), rate(b.tb_w, b.tb_w + b.tb_l)],
+    ["Sets décisifs (2 ans)", wl(a.dec_w, a.dec_l), wl(b.dec_w, b.dec_l), rate(a.dec_w, a.dec_w + a.dec_l), rate(b.dec_w, b.dec_w + b.dec_l)],
+    ["Matchs remontés après le 1er set perdu", `${a.comebacks}/${a.lost_first}`, `${b.comebacks}/${b.lost_first}`, (a.comebacks + 0.5) / (a.lost_first + 2), (b.comebacks + 0.5) / (b.lost_first + 2)],
+    ["Jeux joués sur 7 jours", num(a.games_7d, 0), num(b.games_7d, 0), null, null],
+    ["Dernier match", last(a), last(b), null, null],
+    ["Reprise après une pause", pause(a), pause(b), a.since_break, b.since_break],
+    ["Abandon ou forfait récent", inj(a), inj(b), a.inj_days <= 90 ? -1 : 0, b.inj_days <= 90 ? -1 : 0],
+    ["Face-à-face", num(d.h2h ? d.h2h[0] : 0, 0), num(d.h2h ? d.h2h[1] : 0, 0), d.h2h && d.h2h[0], d.h2h && d.h2h[1]],
+  ];
+  const rows = R.map(([lbl, x, y, sx, sy]) => {
+    const better = sx == null || sy == null || Math.abs(sx - sy) < 1e-9 ? 0 : sx > sy ? 1 : 2;
+    return `<tr><td class="${better === 1 ? "better" : ""}">${x}</td><th>${lbl}</th><td class="r ${better === 2 ? "better" : ""}">${y}</td></tr>`;
+  }).join("");
+  return `<div class="card wide"><h3>📋 Points forts, points faibles</h3><div class="table-wrap"><table class="cmp">
+    <tr><td><b>${esc(short(d.player_1))}</b></td><th></th><td class="r"><b>${esc(short(d.player_2))}</b></td></tr>${rows}</table></div>
+    <p class="faint" style="font-size:11.5px">En vert : l'avantage. Source : résultats tennis-data (pas de statistiques de service ni de durée des matchs).</p></div>`;
+}
+
+async function loadNews(ev) {
+  const box = () => $(`#news-${CSS.escape(ev)}`);
+  let r;
+  try { r = S.news[ev] || (S.news[ev] = await api(`/api/matches/${encodeURIComponent(ev)}/news`)); } catch (e) { if (box()) box().innerHTML = `<h3>📰 Actualités de la semaine</h3><p class="muted">${esc(e.message)}</p>`; return; }
+  const d = S.details[ev], el = box();
+  if (!el || !d) return;
+  const col = (s) => {
+    const n = r.players[s], name = d[`player_${s}`];
+    if (n.error && !n.items.length) return `<div><h4>${esc(name)}</h4><p class="muted">Actualités injoignables (connexion internet ?).</p></div>`;
+    if (!n.items.length) return `<div><h4>${esc(name)}</h4><p class="muted">Aucun article cette semaine.</p></div>`;
+    const sum = n.summary || {};
+    const chips = Object.keys(r.labels).filter((k) => sum[k]).map((k) => `<span class="ntag ${k}">${esc(r.labels[k])} × ${sum[k]}</span>`).join(" ");
+    return `<div><h4>${esc(name)} ${chips}</h4>${n.items.map((it) => `<div class="news-item"><a href="${esc(it.link)}" target="_blank" rel="noopener noreferrer">${esc(it.title)}</a>
+      <div class="faint">${esc(it.source)}${it.published ? ` · ${esc(ago(it.published))}` : ""} ${it.tags.map((k) => `<span class="ntag ${k}">${esc(r.labels[k])}</span>`).join("")}</div></div>`).join("")}</div>`;
+  };
+  el.innerHTML = `<h3>📰 Actualités de la semaine</h3><div class="news-grid">${col(1)}${col(2)}</div>
+    <p class="faint" style="font-size:11.5px">Titres de la presse française et anglophone (Google Actualités), repérés par mots-clés : blessure, fatigue, moral, confiance. Lis-les : un titre peut parler de l'adversaire. Ils n'entrent pas dans mes cotes : aucun historique ne permet de mesurer leur effet.</p>`;
+  if (r.players[1].summary || r.players[2].summary) {           // alerte dans la liste, sans attendre le prochain chargement
+    const m = S.matches.find((x) => x.event_id === ev);
+    if (m) m.news = { 1: r.players[1].summary, 2: r.players[2].summary };
+  }
 }
 
 /* ------------------------------------------------------------------ coupon */
@@ -450,15 +544,55 @@ async function saveSlip() {
   render();
 }
 
+/* ------------------------------------------------------------------ page Bons coups */
+async function renderBonsCoups() {
+  const st = S.status.settings;
+  $("#main").innerHTML = `<h1>Bons coups</h1>
+    <p class="subtitle">Les cotes des bookmakers français comparées à la cote juste (Pinnacle sans sa marge) et à mes cotes.</p>
+    ${banners()}
+    <div class="explain">
+      <div class="card"><b style="color:var(--green)">✅ Cote trop haute</b>Le bookmaker paie plus que la vraie chance du joueur : value d'au moins ${pct(st.min_ev)}. C'est là qu'on parie.</div>
+      <div class="card"><b style="color:var(--red)">⛔ Cote trop basse</b>Les bookmakers français surestiment le joueur d'au moins ${num(st.trap_gap_pp, 0)} points : piège typique des joueurs populaires, sur qui le public mise quand même.</div>
+      <div class="card"><b style="color:var(--purple)">🔍 À creuser</b>Mon modèle et le marché diffèrent d'au moins ${num(st.disagree_pp, 0)} points. Le marché sait souvent quelque chose (blessure, forfait) : lire l'actualité.</div>
+    </div>
+    <div id="picks"><p class="muted">Chargement…</p></div>
+    <p class="footer-note">Cote juste = Pinnacle / Betfair Exchange sans marge : sur 2019-2026, elle prédit mieux que mon modèle (onglet Analyse), c'est donc elle qui décide. Mes cotes, calculées d'après les performances des joueurs, servent de second avis. Une value est une espérance sur beaucoup de paris, jamais une garantie.</p>`;
+  let p;
+  try { p = await api("/api/picks"); } catch (e) { return toast(e.message, true); }
+  if (S.page !== "bons-coups") return;
+  const where = (x) => `${esc(x.player_1)} – ${esc(x.player_2)} · ${esc(x.tournament)} · ${esc(when(x.start))}`;
+  const alert = (x) => { const a = newsAlert(x); return a ? `<div class="newsflag">${esc(a)}</div>` : ""; };
+  const actions = (x, bet) => `<div class="actions"><button class="btn small" data-act="goto" data-ev="${esc(x.event_id)}">Voir le match</button>${bet ? `<button class="btn small primary" data-act="pick" data-ev="${esc(x.event_id)}" data-side="${x.side}">Parier</button>` : ""}</div>`;
+  const good = p.hautes.map((x) => `<div class="pick good">
+      <div class="top"><div><div class="name">${esc(x.player)}</div><div class="sub">${where(x)}</div></div><div class="big" style="color:var(--green)">${pct(x.value, 0, true)}</div></div>
+      <div class="row"><span>${esc(x.book_name || "")} <b class="num">${num(x.cote)}</b></span><span>cote juste <b class="num">${num(x.cote_juste)}</b></span><span>ma cote <b class="num">${num(x.ma_cote)}</b></span></div>
+      <div class="row">${x.modele_ok == null ? `<span class="faint">Mon modèle : pas d'avis</span>` : x.modele_ok ? `<span class="good-text">✔ Mon modèle est d'accord</span>` : `<span class="trap-text">✖ Mon modèle n'est pas d'accord</span>`}</div>
+      ${alert(x)}${actions(x, true)}</div>`).join("");
+  const traps = p.basses.map((x) => `<div class="pick trap">
+      <div class="top"><div><div class="name">${esc(x.player)}</div><div class="sub">${where(x)}</div></div><div class="big" style="color:var(--red)">${pts(x.ecart_fr)}</div></div>
+      <div class="row"><span>Bookmakers FR <b>${pct(side_(x.p_fr, x.side))}</b></span><span>Pinnacle <b>${pct(side_(x.p_decision, x.side))}</b></span><span>ma chance <b>${pct(side_(x.p_model, x.side))}</b></span></div>
+      <div class="row"><span>${esc(x.book_name || "")} <b class="num">${num(x.cote)}</b> au lieu de <b class="num">${num(x.cote_juste)}</b></span></div>
+      ${alert(x)}${actions(x, false)}</div>`).join("");
+  const dig = p.desaccords.map((x) => `<div class="pick dig">
+      <div class="top"><div><div class="name">${esc(x.player)}</div><div class="sub">${where(x)}</div></div><div class="big" style="color:var(--purple)">${pts(x.ecart)}</div></div>
+      <div class="row"><span>ma chance <b>${pct(side_(x.p_model, x.side))}</b></span><span>marché <b>${pct(side_(x.p_decision, x.side))}</b></span></div>
+      <div class="row"><span>ma cote <b class="num">${num(x.ma_cote)}</b></span><span>cote juste <b class="num">${num(x.cote_juste)}</b></span><span>${esc(x.book_name || "FR")} <b class="num">${num(x.cote)}</b></span></div>
+      ${alert(x)}${actions(x, false)}</div>`).join("");
+  const none = (txt) => `<p class="muted" style="margin:0 0 18px">${txt}</p>`;
+  $("#picks").innerHTML = `
+    <h2 class="section-title">✅ Cotes trop hautes : à jouer (${p.hautes.length})</h2>${good ? `<div class="picks">${good}</div>` : none("Aucune pour l'instant : les cotes françaises sont alignées sur la cote juste. Ça change souvent juste après un relevé.")}
+    <h2 class="section-title">⛔ Cotes trop basses : pièges du grand public (${p.basses.length})</h2>${traps ? `<div class="picks">${traps}</div>` : none("Aucune pour l'instant.")}
+    <h2 class="section-title">🔍 Mon modèle n'est pas d'accord avec le marché (${p.desaccords.length})</h2>${dig ? `<div class="picks">${dig}</div>` : none("Aucun gros désaccord.")}`;
+}
+
 /* ------------------------------------------------------------------ page Tendances */
 async function renderTendances() {
-  if (S.moversSource === "argent") return renderTendancesArgent();
   const h = S.moversHours;
-  $("#main").innerHTML = `<h1>Tendances : où va l'argent</h1>${sourceSeg()}
-    <p class="subtitle">Joueurs dont la chance estimée par les bookmakers a le plus monté : c'est sur eux que l'argent arrive.</p>
+  $("#main").innerHTML = `<h1>Tendances : les cotes qui bougent</h1>
+    <p class="subtitle">Joueurs dont la chance estimée par les bookmakers a le plus monté.</p>
     <div class="explain">
-      <div class="card"><b class="o-informe">Argent informé</b>Pinnacle / Betfair ont bougé : parieurs avisés ou information nouvelle (blessure, forfait). Le signal le plus fiable.</div>
-      <div class="card"><b class="o-public">Grand public</b>Seuls les bookmakers français ont bougé : afflux de mises du public, ou prudence du bookmaker. Souvent sur les favoris connus.</div>
+      <div class="card"><b class="o-informe">Mouvement sharp</b>Pinnacle / Betfair ont bougé : parieurs avisés ou information nouvelle (blessure, forfait). Le signal le plus fiable ; une cote française restée en arrière devient intéressante.</div>
+      <div class="card"><b class="o-public">Mouvement FR</b>Seuls les bookmakers français ont bougé : mises du public ou prudence du bookmaker, souvent sur les favoris connus.</div>
       <div class="card"><b class="o-contra">Contradictoire</b>Français et sharp bougent en sens opposés : une cote française peut être en retard sur le vrai marché.</div>
     </div>
     <div class="toolbar"><span class="seg">
@@ -466,7 +600,7 @@ async function renderTendances() {
       <button class="${h === 24 ? "active" : ""}" data-act="movers" data-v="24">24 h</button>
       <button class="${h === 6 ? "active" : ""}" data-act="movers" data-v="6">6 h</button></span></div>
     <div class="movers" id="movers"><p class="muted">Chargement…</p></div>
-    <p class="footer-note">Estimation d'après les mouvements de cotes : les bookmakers ne publient pas les montants misés. Plus les relevés sont fréquents, plus la mesure est fine.</p>`;
+    <p class="footer-note">Plus les relevés sont fréquents, plus la mesure est fine.</p>`;
   let list;
   try { list = await api(`/api/movers?hours=${h}`); } catch (e) { return toast(e.message, true); }
   if (S.page !== "tendances") return;
@@ -481,40 +615,6 @@ async function renderTendances() {
       <div class="spark">${sparkline(m.spark, o.cls === "stable" ? "#6c6f7d" : getComputedStyle(document.documentElement).getPropertyValue(`--${{ informe: "gold", public: "blue", contra: "purple" }[o.cls]}`).trim())}</div>
     </div>`;
   }).join("") : `<div class="empty"><div class="big">📈</div>Aucun match à venir dans les relevés.</div>`;
-}
-
-function sourceSeg() {
-  const s = S.moversSource;
-  return `<div class="toolbar"><span class="seg">
-    <button class="${s === "argent" ? "active" : ""}" data-act="movers-source" data-v="argent">💰 Argent réel (Polymarket)</button>
-    <button class="${s === "cotes" ? "active" : ""}" data-act="movers-source" data-v="cotes">📉 Mouvements de cotes</button></span></div>`;
-}
-
-async function renderTendancesArgent() {
-  const h = S.moversHours;
-  $("#main").innerHTML = `<h1>Tendances : où va l'argent</h1>${sourceSeg()}
-    <p class="subtitle">Montants réellement misés sur Polymarket, où chaque transaction est publique : les matchs où l'argent penche le plus d'un côté.</p>
-    <div class="explain">
-      <div class="card"><b style="color:var(--green)">Argent réel</b>Des dollars effectivement échangés, pas une estimation. Le joueur en tête reçoit la plus grande part.</div>
-      <div class="card"><b style="color:var(--blue)">Part de l'argent</b>Achats d'un joueur + ventes de son adversaire, rapportés au total échangé sur la période.</div>
-      <div class="card"><b style="color:var(--gold)">À savoir</b>Volumes parfois modestes : quelques gros paris peuvent faire basculer la part. Polymarket n'est pas autorisé en France : on lit, on n'y parie pas.</div>
-    </div>
-    <div class="toolbar"><span class="seg">
-      <button class="${h === 0 ? "active" : ""}" data-act="movers" data-v="0">Depuis l'ouverture</button>
-      <button class="${h === 24 ? "active" : ""}" data-act="movers" data-v="24">24 h</button>
-      <button class="${h === 6 ? "active" : ""}" data-act="movers" data-v="6">6 h</button></span></div>
-    <div class="movers" id="movers"><p class="muted">Chargement…</p></div>`;
-  let list;
-  try { list = await api(`/api/movers/argent?hours=${h}`); } catch (e) { return toast(e.message, true); }
-  if (S.page !== "tendances" || S.moversSource !== "argent") return;
-  $("#movers").innerHTML = list.length ? list.map((m, i) => `
-    <div class="mover"${m.event_id ? ` data-act="goto" data-ev="${esc(m.event_id)}"` : ` style="cursor:default"`}>
-      <div class="rank">${i + 1}</div>
-      <div><div class="name">${esc(m.player)}</div><div class="sub">${esc(m.player_1)} – ${esc(m.player_2)} · ${esc(m.tournament)} · ${esc(when(m.start))}${m.event_id ? "" : " · pas de cote française"}</div></div>
-      <div><div class="big-delta" style="color:var(--green)">${pct(m.share)}</div><div class="faint" style="font-size:12px">de ${usd(m.usd_total)}${m.n_big ? ` · ${m.n_big} gros pari${m.n_big > 1 ? "s" : ""}` : ""}</div></div>
-      <div class="odds-move num">${pct(m.price)}<div class="faint" style="font-size:11.5px">chance selon Polymarket</div></div>
-      <div class="spark">${sparkline(m.spark, "#22c55e")}</div>
-    </div>`).join("") : `<div class="empty"><div class="big">💰</div>Pas encore de données Polymarket : elles arrivent avec les relevés automatiques (bouton ⟳ Mettre à jour).</div>`;
 }
 
 /* ------------------------------------------------------------------ page Mes paris */
@@ -566,7 +666,7 @@ async function renderParis() {
 }
 
 /* ------------------------------------------------------------------ page Analyse */
-const STRAT = { modele: "Modèle seul", modele_confirme: "Modèle confirmé par le sharp", sharp: "Sharp seul (cote en retard)" };
+const STRAT = { modele: "Mon modèle seul", modele_confirme: "Mon modèle confirmé par le sharp", sharp: "Cote juste Pinnacle (cote en retard)" };
 const BOOKL = { b365: "Bet365", avg: "Cote moyenne", anj_proxy: "Proxy ANJ", max: "Meilleure cote", ps: "Pinnacle" };
 async function renderAnalyse() {
   $("#main").innerHTML = `<h1>Analyse</h1><p class="subtitle">Ce que disent les saisons passées.</p><div id="an"><p class="muted">Chargement…</p></div>`;
@@ -575,13 +675,28 @@ async function renderAnalyse() {
   if (!a) { $("#an").innerHTML = `<div class="empty"><div class="big">📊</div>Pas encore d'analyse.<br><br><button class="btn primary" data-act="rebuild">Calculer le modèle</button></div>`; return; }
   const strat = a.backtest.filter((r) => [0.02, 0.05].includes(r.seuil) && ["b365", "anj_proxy"].includes(r.book));
   const evalRows = a.evaluation.filter((r) => /régression|sharp|Bet365/.test(r.source));
+  const w = a.poids_facteurs || [];
+  const tours = [...new Set(w.map((r) => r.tour))];
+  const maxW = Math.max(1, ...w.map((r) => r.effet_moyen_pts));
+  const weights = tours.map((t) => `<div><h4>${esc(t)}</h4>${w.filter((r) => r.tour === t).sort((x, y) => y.effet_moyen_pts - x.effet_moyen_pts).map((r) => `
+      <div class="fx"><span class="fx-name">${esc(FACT[r.famille] || r.nom)}</span><div class="fx-bar"><span class="fill p1" style="left:0;width:${(100 * r.effet_moyen_pts / maxW).toFixed(1)}%"></span></div>
+      <span class="fx-val">${num(r.effet_moyen_pts, 1)} pts <span class="faint">· ≥ 3 pts : ${pct(r.part_3pts)}</span></span></div>`).join("")}</div>`).join("");
+  const bias = a.biais_public || [];
   $("#an").innerHTML = `
-    <div class="card" style="margin-bottom:14px"><p style="color:var(--text)">Le <b>marché sharp (Pinnacle / Betfair)</b> prédit mieux que notre modèle : les paris conseillés reposent donc sur sa cote juste, le modèle sert de second avis.
+    <div class="card" style="margin-bottom:14px"><p style="color:var(--text)">Le <b>marché sharp (Pinnacle / Betfair)</b> prédit mieux que mon modèle, même avec la forme, la surface, le tournoi, la fatigue, les blessures et le mental : ces informations sont déjà dans ses cotes. Les verdicts reposent donc sur sa cote juste ; mes cotes servent de second avis et expliquent le match.
       Calculée le ${esc(new Date(a.genere_le).toLocaleString("fr-FR"))} sur ${num(a.n_matchs, 0)} matchs (${esc(a.periode[0])} → ${esc(a.periode[1])}).</p></div>
     <div class="stack">
+      ${w.length ? `<div class="card"><h3>🧩 Ce qui pèse dans mes cotes</h3><p>Effet moyen de chaque famille de facteurs sur la chance d'un joueur (saison en cours), et part des matchs où elle pèse au moins 3 points.</p><div class="news-grid">${weights}</div></div>` : ""}
+      ${bias.length ? `<div class="card"><h3>🎭 Les bookmakers grand public face à Pinnacle</h3>
+        <p>Écart : chance du mieux classé selon Bet365 moins selon Pinnacle, marges retirées. Rendement : ce que rapporte 1 € misé à la cote Bet365, sur le mieux classé ou sur son adversaire.</p>
+        <div class="table-wrap"><table><tr><th>Circuit</th><th>Mieux classé</th><th class="r">Matchs</th><th class="r">Écart</th><th class="r">Gagne vraiment</th><th class="r">Rendement favori</th><th class="r">Rendement adversaire</th></tr>
+        ${bias.map((r) => `<tr><td>${esc(r.tour)}</td><td>${esc(r.tranche)}</td><td class="r num">${num(r.n, 0)}</td><td class="r num">${pts(r.ecart_pts)}</td><td class="r num">${pct(r.chance_reelle)}</td>
+          <td class="r num" style="color:${r.yield_mieux_classe > 0 ? "var(--green)" : "var(--red)"}">${pct(r.yield_mieux_classe, 1, true)}</td>
+          <td class="r num" style="color:${r.yield_adversaire > 0 ? "var(--green)" : "var(--red)"}">${pct(r.yield_adversaire, 1, true)}</td></tr>`).join("")}</table></div>
+        <p>Les bookmakers grand public avantagent un peu les mieux classés (écart positif) ; mais ce sont surtout les <b>outsiders face aux tout meilleurs</b> qui sont mal payés. Parier « contre le favori » par principe perd beaucoup : seule la comparaison match par match avec la cote juste trouve les bonnes cotes.</p></div>` : ""}
       <div class="card"><h3>Qualité des probabilités</h3><p>Log loss : plus bas = meilleur.</p><div class="table-wrap"><table>
         <tr><th>Circuit</th><th>Source</th><th class="r">Log loss</th><th class="r">Précision</th></tr>
-        ${evalRows.map((r) => `<tr><td>${esc(r.tour)}</td><td>${esc(r.source)}</td><td class="r num">${num(r.log_loss, 3)}</td><td class="r num">${pct(r.precision, 1)}</td></tr>`).join("")}</table></div></div>
+        ${evalRows.map((r) => `<tr><td>${esc(r.tour)}</td><td>${esc(r.source.replace("Ensemble (régression logistique)", "Mon modèle"))}</td><td class="r num">${num(r.log_loss, 3)}</td><td class="r num">${pct(r.precision, 1)}</td></tr>`).join("")}</table></div></div>
       <div class="card"><h3>Stratégies de paris (backtest)</h3><p>Yield : bénéfice par euro misé. Si la fourchette IC 95 % contient 0, la stratégie n'est pas prouvée.</p><div class="table-wrap"><table>
         <tr><th>Stratégie</th><th>Cotes</th><th class="r">Seuil</th><th class="r">Paris</th><th class="r">Yield</th><th class="r">IC 95 %</th></tr>
         ${strat.map((r) => `<tr><td>${esc(STRAT[r.strategie] || r.strategie)}</td><td>${esc(BOOKL[r.book] || r.book)}</td><td class="r">${pct(r.seuil)}</td><td class="r num">${num(r.n_paris, 0)}</td>
@@ -605,7 +720,9 @@ async function renderReglages() {
           <div class="field"><label>Total max en jeu (% bankroll)</label><input id="r-maxexpo" type="number" step="1" min="1" max="50" value="${+(100 * s.max_exposure_pct).toFixed(2)}"></div></div>
       </div>
       <div class="card"><h3>🎯 Sélection des paris</h3>
-        <div class="field"><label>Value minimale (%)</label><input id="r-minev" type="number" step="0.5" min="0" max="20" value="${+(100 * s.min_ev).toFixed(2)}"></div>
+        <div class="field"><label>Value minimale (%) : en dessous, la cote n'est pas « trop haute »</label><input id="r-minev" type="number" step="0.5" min="0" max="20" value="${+(100 * s.min_ev).toFixed(2)}"></div>
+        <div class="two"><div class="field"><label>Piège : surcote minimale (pts)</label><input id="r-trap" type="number" step="0.5" min="1" max="20" value="${s.trap_gap_pp}"></div>
+          <div class="field"><label>À creuser : écart modèle / marché (pts)</label><input id="r-disagree" type="number" step="1" min="3" max="30" value="${s.disagree_pp}"></div></div>
         <div class="two"><div class="field"><label>Cote minimale</label><input id="r-minodds" type="number" step="0.05" min="1.01" value="${s.min_odds}"></div>
           <div class="field"><label>Cote maximale</label><input id="r-maxodds" type="number" step="0.5" min="1.1" value="${s.max_odds}"></div></div>
         <div class="field"><label>Probabilité utilisée pour décider</label><div class="radio">
@@ -627,7 +744,7 @@ async function renderReglages() {
         <p>Une fois par semaine : sur <a href="http://www.tennis-data.co.uk/alldata.php" target="_blank" rel="noopener">tennis-data.co.uk</a>, télécharge les fichiers Excel de la saison (hommes et femmes), puis dépose-les ici. Le modèle est ensuite recalculé.</p>
         <label class="drop" id="drop">Glisse les fichiers .xlsx ici, ou clique pour les choisir<input id="files" type="file" accept=".xlsx" multiple class="hidden"></label></div>
       <div class="card wide"><h3>📡 Relevés de cotes</h3><p>GitHub relève les cotes vers <b>8 h 30, 11 h 30, 14 h 30, 17 h 30 et 20 h 30</b> (une heure plus tard en été), même ordinateur éteint. L'application les récupère toute seule à l'ouverture puis toutes les 30 minutes (bouton ⟳ pour forcer).
-        Les flux d'argent réels de <b>Polymarket</b> sont relevés en même temps, gratuitement.
+        Les actualités des joueurs sont relevées en même temps, depuis cet ordinateur.
         ${st.can_fetch === "local" ? "« Relever maintenant » utilise la clé The Odds API de cet ordinateur." : st.can_fetch === "github" ? "« Relever maintenant » lance un relevé sur GitHub (1 à 2 minutes)." : "« Relever maintenant » n'est pas disponible : lancer scripts/install_chromebook.sh."}</p></div>
     </div>`;
   const drop = $("#drop"), input = $("#files");
@@ -643,6 +760,7 @@ async function saveSettings() {
     bankroll: val("#r-bankroll"), kelly_multiplier: val("#r-kelly"), max_stake_pct: val("#r-maxstake") / 100,
     max_exposure_pct: val("#r-maxexpo") / 100, min_ev: val("#r-minev") / 100, min_odds: val("#r-minodds"),
     max_odds: val("#r-maxodds"), decision_source: (document.querySelector('input[name="src"]:checked') || {}).value,
+    trap_gap_pp: val("#r-trap"), disagree_pp: val("#r-disagree"),
   };
   if (Object.values(body).some((v) => v === undefined || Number.isNaN(v))) return toast("Un champ est vide ou invalide.", true);
   try { await api("/api/settings", { method: "PUT", body: JSON.stringify(body) }); } catch (e) { return toast(e.message, true); }
@@ -714,12 +832,13 @@ function render() {
   document.querySelectorAll("nav a.item[data-page]").forEach((a) => a.classList.toggle("active", a.dataset.page === S.page));
   renderTournaments();
   renderSlip();
-  ({ matchs: renderMatchs, tendances: renderTendances, paris: renderParis, analyse: renderAnalyse, reglages: renderReglages }[S.page] || renderMatchs)();
+  ({ "bons-coups": renderBonsCoups, matchs: renderMatchs, tendances: renderTendances, paris: renderParis, analyse: renderAnalyse,
+    reglages: renderReglages }[S.page] || renderBonsCoups)();
 }
 
 function route() {
-  const [, page = "matchs", arg] = location.hash.split("/");
-  S.page = ["matchs", "tendances", "paris", "analyse", "reglages"].includes(page) ? page : "matchs";
+  const [, page = "bons-coups", arg] = location.hash.split("/");
+  S.page = ["bons-coups", "matchs", "tendances", "paris", "analyse", "reglages"].includes(page) ? page : "bons-coups";
   if (S.page === "matchs" && arg) {
     const ev = decodeURIComponent(arg);
     S.filter = { tour: "all", tournament: null, value: false };
@@ -751,7 +870,6 @@ document.addEventListener("click", async (e) => {
   else if (act === "slip-clear") { S.slip = null; render(); }
   else if (act === "slip-save") saveSlip();
   else if (act === "movers") { S.moversHours = +t.dataset.v; renderTendances(); }
-  else if (act === "movers-source") { S.moversSource = t.dataset.v; renderTendances(); }
   else if (act === "goto") location.hash = `#/matchs/${encodeURIComponent(t.dataset.ev)}`;
   else if (act === "settle") {
     try { await api(`/api/bets/${t.dataset.id}/settle`, { method: "POST", body: JSON.stringify({ result: t.dataset.r }) }); } catch (err) { return toast(err.message, true); }

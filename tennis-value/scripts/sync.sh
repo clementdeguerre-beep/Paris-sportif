@@ -4,5 +4,4 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 git pull -q --ff-only
 .venv/bin/tennisvalue import-odds
-.venv/bin/tennisvalue import-polymarket
 .venv/bin/tennisvalue scan

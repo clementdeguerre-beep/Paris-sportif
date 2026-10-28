@@ -48,6 +48,18 @@ def make_matches(n: int = 600, n_players: int = 30, seed: int = 0) -> pd.DataFra
     return df
 
 
+def make_live(n: int = 1600, n_players: int = 24, seed: int = 3) -> dict:
+    """Modèle final (comme live_model.pkl) appris sur des matchs synthétiques."""
+    from tennisvalue.models import ensemble
+    from tennisvalue.models.features import FEATURE_VERSION, build_features
+
+    m = make_matches(n=n, n_players=n_players, seed=seed)
+    f, states = build_features(m)
+    return {"models": {"ATP": ensemble.fit(f[f.completed], "logit")}, "states": states,
+            "last_rank": {("ATP", k): 10.0 for k in m["winner_key"]}, "feature_version": FEATURE_VERSION,
+            "data_until": str(m.date.max()), "built_at": "2026-10-28T10:00"}
+
+
 @pytest.fixture
 def matches() -> pd.DataFrame:
     return make_matches()

@@ -10,10 +10,17 @@ Variables produites (joueur 1 vs joueur 2, ordre tiré au hasard) :
 - Elo global, Elo surface, Elo mélangé et probabilités associées ;
 - note de domination aux points + probabilité Markov ;
 - classement officiel (au début du tournoi, fourni par tennis-data) ;
-- fatigue : jeux et matchs joués sur 7 et 14 jours ;
-- rouille / retour de blessure : jours depuis le dernier match ;
+- fatigue : jeux et matchs joués sur 7 et 14 jours, longueur du dernier match, matchs
+  sur 4 jours ;
+- rouille / retour de blessure : jours depuis le dernier match, matchs joués depuis une
+  longue pause, abandon ou forfait récent ;
+- forme : surperformance sur les 10 derniers matchs (victoires - victoires attendues par
+  l'Elo), sur la surface (12 mois), dans le tournoi (éditions précédentes) ;
+- mental : tie-breaks et sets décisifs, matchs gagnés après la perte du premier set ;
+- dynamique du classement sur 3 mois ;
 - expérience : nombre de matchs dans la base ;
 - confrontations directes.
+Détail des facteurs de profil : models/profile.py.
 """
 from __future__ import annotations
 
@@ -26,6 +33,7 @@ import numpy as np
 import pandas as pd
 
 from tennisvalue.models.markov import final_set_rule
+from tennisvalue.models.profile import PlayerProfile, tournament_key
 from tennisvalue.ratings.elo import EloSystem
 from tennisvalue.ratings.points import PointRating
 
@@ -64,9 +72,11 @@ class FeatureState:
     elo: EloSystem = field(default_factory=EloSystem)
     pts: PointRating = field(default_factory=PointRating)
     hist: PlayerHistory = field(default_factory=PlayerHistory)
+    prof: PlayerProfile = field(default_factory=PlayerProfile)
     update_on_retirement: bool = False
 
-    def pre_match(self, a: str, b: str, tour: str, surface: str, best_of: int, rule: str, d: date) -> dict:
+    def pre_match(self, a: str, b: str, tour: str, surface: str, best_of: int, rule: str, d: date,
+                  tkey: str | None = None) -> dict:
         out = {}
         e = self.elo.predict(a, b, surface)
         suffix = {"_a": "_1", "_b": "_2"}
@@ -75,11 +85,15 @@ class FeatureState:
         for side, p in (("1", a), ("2", b)):
             for k, v in self.hist.fatigue(p, d).items():
                 out[f"{k}_{side}"] = v
+            for k, v in self.prof.features(p, d, surface, tkey).items():
+                out[f"{k}_{side}"] = v
         out["h2h_1"] = self.hist.h2h[(a, b)]
         out["h2h_2"] = self.hist.h2h[(b, a)]
         return out
 
-    def post_match(self, r) -> None:
+    def post_match(self, r, tkey: str | None = None) -> None:
+        exp_w = self.elo.predict(r.winner_key, r.loser_key, r.surface)["p_elo_blend"]
+        self.prof.record(r, exp_w, tkey or tournament_key(r.location, r.surface, r.tier))
         if r.walkover:
             return
         games = r.w_games + r.l_games
@@ -103,6 +117,7 @@ def build_features(matches: pd.DataFrame, pts_params: dict | None = None,
             flip = _flip(r.match_id)
             a, b = (r.loser_key, r.winner_key) if flip else (r.winner_key, r.loser_key)
             rule = final_set_rule(r.tier, r.date.year, r.tournament)
+            tkey = tournament_key(r.location, r.surface, r.tier)
             row = {
                 "match_id": r.match_id, "tour": r.tour, "date": r.date, "season": r.season,
                 "tournament": r.tournament, "tier": r.tier, "surface": r.surface, "court": r.court,
@@ -115,9 +130,9 @@ def build_features(matches: pd.DataFrame, pts_params: dict | None = None,
             for bk in BOOK_KEYS:
                 ow, ol = getattr(r, f"odds_{bk}_w"), getattr(r, f"odds_{bk}_l")
                 row[f"odds_{bk}_1"], row[f"odds_{bk}_2"] = (ol, ow) if flip else (ow, ol)
-            row.update(st.pre_match(a, b, r.tour, r.surface, r.best_of, rule, r.date))
+            row.update(st.pre_match(a, b, r.tour, r.surface, r.best_of, rule, r.date, tkey))
             rows.append(row)
-            st.post_match(r)
+            st.post_match(r, tkey)
         states[tour] = st
     feats = pd.DataFrame(rows)
     return add_derived(feats), states
@@ -144,10 +159,17 @@ def add_derived(f: pd.DataFrame) -> pd.DataFrame:
     f["x_rust"] = np.log1p(f["days_since_1"]) - np.log1p(f["days_since_2"])
     f["x_h2h"] = (f["h2h_1"] - f["h2h_2"]) / (f["h2h_1"] + f["h2h_2"] + 2.0)
     f["x_bo5_elo"] = f["x_logit_elo_blend"] * (f["best_of"] == 5)
+    for k in ("form10", "surf_form", "tourn_form", "clutch_tb", "clutch_dec", "comeback", "m4", "rusty",
+              "injury", "rank_mom"):
+        f[f"x_{k}"] = f[f"{k}_1"] - f[f"{k}_2"]
+    f["x_last_games"] = (f["last_games_1"] - f["last_games_2"]) / 10.0
     return f
 
 
 FEATURES = [
     "x_logit_elo", "x_logit_elo_surf", "x_logit_pts", "x_log_rank_ratio",
     "x_exp", "x_games14", "x_games7", "x_rust", "x_h2h", "x_bo5_elo",
+    "x_form10", "x_surf_form", "x_tourn_form", "x_clutch_tb", "x_clutch_dec", "x_comeback",
+    "x_last_games", "x_m4", "x_rusty", "x_injury", "x_rank_mom",
 ]
+FEATURE_VERSION = 2   # à changer quand les variables changent : un ancien modèle doit être recalculé
