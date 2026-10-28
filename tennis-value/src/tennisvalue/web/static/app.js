@@ -296,7 +296,7 @@ function renderDetail(ev) {
   const rows = shown.map((b) => `<tr><td>${esc(b.name)}${b.sharp ? ' <span class="tag">référence</span>' : ""}</td>
       <td class="r num"${b.french && b.odds_1 === best1 ? ' style="color:var(--green);font-weight:800"' : ""}>${num(b.odds_1)}</td>
       <td class="r num"${b.french && b.odds_2 === best2 ? ' style="color:var(--green);font-weight:800"' : ""}>${num(b.odds_2)}</td>
-      <td class="r num">${pct(b.margin, 1)}</td><td class="r faint">${esc(ago(b.updated))}</td></tr>`).join("");
+      <td class="r num">${pct(b.margin, 1)}</td></tr>`).join("");
   const pm = d.p_model, ps = d.p_sharp;
   const factors = (d.facteurs_cles || "").replace(/ \([+-]?\d+(\.\d+)?\)/g, "").replace(/→ J1/g, `→ ${short(d.player_1)}`).replace(/→ J2/g, `→ ${short(d.player_2)}`).split(" ; ").filter(Boolean);
   box.innerHTML = `
@@ -307,7 +307,7 @@ function renderDetail(ev) {
     <div class="card"><h3>💶 Flux estimé ${o ? `<span class="origin o-${o.cls}" style="font-size:12px">${o.label}</span>` : ""}</h3>
       <div id="cf-${esc(ev)}"></div><p>${fluxText}</p></div>
     <div class="card"><h3>🏦 Cotes par bookmaker</h3><div class="table-wrap"><table>
-      <tr><th>Bookmaker</th><th class="r">${esc(short(d.player_1))}</th><th class="r">${esc(short(d.player_2))}</th><th class="r">Marge</th><th class="r">Relevé</th></tr>${rows}</table></div>
+      <tr><th>Bookmaker</th><th class="r">${esc(short(d.player_1))}</th><th class="r">${esc(short(d.player_2))}</th><th class="r">Marge</th></tr>${rows}</table></div>
       ${others ? `<p class="faint">${others} bookmaker${others > 1 ? "s" : ""} étranger${others > 1 ? "s" : ""} non affiché${others > 1 ? "s" : ""}.</p>` : ""}</div>
     <div class="card"><h3>🧠 Avis</h3>
       ${ps != null ? `<p>Chance de <b>${esc(d.player_1)}</b> : <b>${pct(ps)}</b> selon le marché sharp${pm != null ? `, ${pct(pm)} selon notre modèle` : ""}.</p>` : `<p>Pas de cote Pinnacle / Betfair : pas d'estimation fiable.</p>`}
