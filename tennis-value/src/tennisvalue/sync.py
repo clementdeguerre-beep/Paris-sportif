@@ -36,7 +36,7 @@ def fetch_local(settings: Settings, sport: str | None = None, export: bool = Fal
     con = db.connect(settings.db_path)
     frames = []
     for k in keys:
-        df = parse_events(client.odds(k, regions=settings.odds_regions))
+        df = parse_events(client.odds(k, regions=settings.odds_regions, bookmakers=settings.odds_bookmakers))
         if not df.empty:
             db.append_table(con, "odds_snapshots", df)
             frames.append(df)
@@ -56,6 +56,14 @@ def _run(cmd: list[str], timeout: float = 120) -> str:
     if r.returncode != 0:
         raise SyncError((r.stderr or r.stdout).strip() or f"Échec : {' '.join(cmd)}")
     return r.stdout
+
+
+def code_version() -> str:
+    """Dernier commit touchant le code (pas les relevés ajoutés par GitHub Actions) ; vide hors git."""
+    try:
+        return _run(["git", "log", "-1", "--format=%h", "--", "src", "pyproject.toml", "scripts"], timeout=20).strip()
+    except SyncError:
+        return ""
 
 
 def is_git_repo() -> bool:

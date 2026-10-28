@@ -18,6 +18,9 @@ max_exposure_pct: 0.10
 # The Odds API : mettre la clé ici ou dans la variable d'environnement ODDS_API_KEY
 # odds_api_key: "VOTRE_CLE"
 odds_regions: "fr,eu"
+# Bookmakers demandés, prioritaires sur odds_regions (10 au plus = 1 région facturée, soit
+# 1 crédit par tournoi et par relevé au lieu de 2). Vide = utiliser odds_regions.
+# odds_bookmakers: "winamax_fr,betclic_fr,unibet_fr,pmu_fr,netbet_fr,pinnacle,betfair_ex_eu"
 
 # Alertes
 steam_move_pp: 3.0

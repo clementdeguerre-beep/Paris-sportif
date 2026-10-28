@@ -37,6 +37,9 @@ class Settings:
     # Cotes en direct (The Odds API)
     odds_api_key: str = field(default_factory=lambda: os.environ.get("ODDS_API_KEY", ""))
     odds_regions: str = "fr,eu"      # fr = sites ANJ ; eu = Pinnacle, Betfair Exchange…
+    # Bookmakers demandés (prioritaires sur odds_regions). Jusqu'à 10 bookmakers = 1 région
+    # facturée au lieu de 2 pour « fr,eu » : le relevé coûte deux fois moins de crédits.
+    odds_bookmakers: str = "winamax_fr,betclic_fr,unibet_fr,pmu_fr,netbet_fr,pinnacle,betfair_ex_eu"
     sharp_books: tuple = ("pinnacle", "betfair_ex_eu")
     anj_books: tuple = ("betclic_fr", "winamax_fr", "unibet_fr", "pmu_fr", "parionssport_fr", "netbet_fr")
 

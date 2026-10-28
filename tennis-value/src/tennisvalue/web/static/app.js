@@ -291,8 +291,9 @@ function renderDetail(ev) {
     fluxText += who ? `<br><span class="origin o-${o.cls}">${o.label}</span> : l'argent semble aller sur <b>${esc(who)}</b>.` : `<br>Pas de mouvement net.`;
     if (d.flux_24h && d.flux_24h.n_releves >= 2 && d.flux_24h.n_releves < f.n_releves) fluxText += ` Sur 24 h : ${pts(d.flux_24h.flux)} pour ${esc(short(d.player_1))}.`;
   }
+  const shown = d.books.filter((b) => b.french || b.sharp), others = d.books.length - shown.length;
   const best1 = Math.max(...d.books.filter((b) => b.french).map((b) => b.odds_1)), best2 = Math.max(...d.books.filter((b) => b.french).map((b) => b.odds_2));
-  const rows = d.books.map((b) => `<tr><td>${esc(b.name)}${b.sharp ? ' <span class="tag">référence</span>' : ""}</td>
+  const rows = shown.map((b) => `<tr><td>${esc(b.name)}${b.sharp ? ' <span class="tag">référence</span>' : ""}</td>
       <td class="r num"${b.french && b.odds_1 === best1 ? ' style="color:var(--green);font-weight:800"' : ""}>${num(b.odds_1)}</td>
       <td class="r num"${b.french && b.odds_2 === best2 ? ' style="color:var(--green);font-weight:800"' : ""}>${num(b.odds_2)}</td>
       <td class="r num">${pct(b.margin, 1)}</td><td class="r faint">${esc(ago(b.updated))}</td></tr>`).join("");
@@ -306,7 +307,8 @@ function renderDetail(ev) {
     <div class="card"><h3>💶 Flux estimé ${o ? `<span class="origin o-${o.cls}" style="font-size:12px">${o.label}</span>` : ""}</h3>
       <div id="cf-${esc(ev)}"></div><p>${fluxText}</p></div>
     <div class="card"><h3>🏦 Cotes par bookmaker</h3><div class="table-wrap"><table>
-      <tr><th>Bookmaker</th><th class="r">${esc(short(d.player_1))}</th><th class="r">${esc(short(d.player_2))}</th><th class="r">Marge</th><th class="r">Relevé</th></tr>${rows}</table></div></div>
+      <tr><th>Bookmaker</th><th class="r">${esc(short(d.player_1))}</th><th class="r">${esc(short(d.player_2))}</th><th class="r">Marge</th><th class="r">Relevé</th></tr>${rows}</table></div>
+      ${others ? `<p class="faint">${others} bookmaker${others > 1 ? "s" : ""} étranger${others > 1 ? "s" : ""} non affiché${others > 1 ? "s" : ""}.</p>` : ""}</div>
     <div class="card"><h3>🧠 Avis</h3>
       ${ps != null ? `<p>Chance de <b>${esc(d.player_1)}</b> : <b>${pct(ps)}</b> selon le marché sharp${pm != null ? `, ${pct(pm)} selon notre modèle` : ""}.</p>` : `<p>Pas de cote Pinnacle / Betfair : pas d'estimation fiable.</p>`}
       ${d.statut === "VALUE" ? `<p style="color:var(--green)">Pari conseillé : <b>${esc(d.pari)}</b> à ${num(d.cote)} (value ${pct(d.value, 1, true)}).</p>` : d.statut ? `<p>Pas de value au-dessus de ton seuil pour l'instant.</p>` : `<p>Modèle non calculé.</p>`}
@@ -314,7 +316,7 @@ function renderDetail(ev) {
       ${d.alerte_donnees ? `<p class="faint">⚠️ ${esc(d.alerte_donnees.replace(/[ ;]+$/, ""))}</p>` : ""}
       ${d.steam ? `<p style="color:var(--gold)">⚡ Mouvement brusque de la cote sharp : vérifier l'actualité avant de parier.</p>` : ""}
     </div>`;
-  const oddsSeries = d.series.map((s) => ({ name: s.name, color: colorFor(s.key, s.sharp), dashed: s.sharp,
+  const oddsSeries = d.series.filter((s) => s.french || s.sharp).map((s) => ({ name: s.name, color: colorFor(s.key, s.sharp), dashed: s.sharp,
     points: s.points.map((p) => [Date.parse(p[0]), p[side]]) }));
   lineChart($(`#co-${CSS.escape(ev)}`), { series: oddsSeries, yFmt: (v) => num(v) });
   lineChart($(`#cf-${CSS.escape(ev)}`), {
@@ -598,10 +600,21 @@ async function update(silent = false) {
     r = silent ? await api("/api/update", { method: "POST" })
       : await busy("Récupération des derniers relevés…", () => api("/api/update", { method: "POST" }));
   } catch (e) { if (!silent) toast(e.message, true); return; }
+  if (r.new_version) newVersionBanner();
   if (silent && !r.imported) return;
   await Promise.all([loadStatus(), loadMatches()]);
   if (!S.slip || slipMatch()) render();
   if (r.imported || !silent) toast(r.imported ? `${r.imported} nouvelle(s) cote(s).` : "Déjà à jour.");
+}
+
+function newVersionBanner() {
+  if ($("#new-version")) return;
+  const b = document.createElement("div");
+  b.id = "new-version";
+  b.className = "toast";
+  b.innerHTML = "🆕 Nouvelle version de Tennis Value téléchargée : ferme cet onglet puis rouvre l'application avec l'icône.";
+  b.style.bottom = "80px";
+  document.body.appendChild(b);
 }
 
 async function fetchNow() {

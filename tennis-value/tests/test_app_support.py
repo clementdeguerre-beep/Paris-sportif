@@ -105,3 +105,16 @@ def test_save_results_file(tmp_path):
     pd.DataFrame({"a": [1]}).to_excel(buf, index=False)
     with pytest.raises(ValueError, match="pas un fichier de résultats"):
         save_results_file(buf.getvalue(), tmp_path)
+
+
+def test_odds_request_uses_bookmakers_list():
+    from tennisvalue.ingest.oddsapi import OddsApiClient, tournament_context
+
+    client, calls = OddsApiClient("cle"), []
+    client._get = lambda path, **params: calls.append(params) or []
+    client.odds("tennis_atp_swiss_indoors", regions="fr,eu", bookmakers="winamax_fr,pinnacle")
+    client.odds("tennis_atp_swiss_indoors", regions="fr,eu")
+    assert calls[0]["bookmakers"] == "winamax_fr,pinnacle" and "regions" not in calls[0]   # 1 région facturée
+    assert calls[1]["regions"] == "fr,eu" and "bookmakers" not in calls[1]
+    assert tournament_context("tennis_atp_swiss_indoors")["surface_known"]
+    assert len(Settings().odds_bookmakers.split(",")) <= 10

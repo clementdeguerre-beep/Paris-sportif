@@ -35,7 +35,11 @@ SURFACE_BY_KEYWORD = {
 HARD_KEYWORDS = (
     "aus_open", "canadian", "china", "cincinnati", "dubai", "indian_wells", "japan", "miami",
     "paris_masters", "qatar", "shanghai", "us_open", "washington", "guadalajara", "monterrey",
-    "singapore", "wuhan",
+    "singapore", "wuhan", "swiss_indoors", "basel", "vienna", "pan_pacific", "tokyo", "stockholm",
+    "antwerp", "european_open", "atp_finals", "wta_finals", "rotterdam", "marseille", "montpellier",
+    "doha", "abu_dhabi", "adelaide", "brisbane", "auckland", "hong_kong", "dallas", "acapulco", "atlanta",
+    "toronto", "montreal", "beijing", "seoul", "ningbo", "osaka", "metz", "almaty", "athens", "chengdu",
+    "hangzhou", "zhuhai",
 )
 SLAM_KEYWORDS = ("aus_open", "french_open", "wimbledon", "us_open")
 
@@ -71,8 +75,10 @@ class OddsApiClient:
         """Tournois de tennis actuellement ouverts aux paris."""
         return [s for s in self._get("/sports") if s["key"].startswith("tennis_") and s.get("active")]
 
-    def odds(self, sport_key: str, regions: str = "fr,eu", markets: str = "h2h") -> list[dict]:
-        return self._get(f"/sports/{sport_key}/odds", regions=regions, markets=markets, oddsFormat="decimal")
+    def odds(self, sport_key: str, regions: str = "fr,eu", markets: str = "h2h", bookmakers: str = "") -> list[dict]:
+        """Cotes d'un tournoi : liste de bookmakers si donnée (jusqu'à 10 = 1 région facturée), sinon régions."""
+        where = {"bookmakers": bookmakers} if bookmakers else {"regions": regions}
+        return self._get(f"/sports/{sport_key}/odds", markets=markets, oddsFormat="decimal", **where)
 
 
 def parse_events(events: list[dict], fetched_at: datetime | None = None) -> pd.DataFrame:

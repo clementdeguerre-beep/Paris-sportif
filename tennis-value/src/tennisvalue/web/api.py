@@ -40,6 +40,7 @@ app = FastAPI(title="Tennis Value", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 _lock = threading.Lock()          # relevé, mise à jour et recalcul : un à la fois
 _cache: dict = {}
+VERSION = sync.code_version()     # comparé par scripts/lancer.sh pour redémarrer après une mise à jour
 
 
 # --------------------------------------------------------------------------- outils
@@ -117,7 +118,7 @@ def open_stakes(s: Settings) -> float:
 # --------------------------------------------------------------------------- statut
 @app.get("/api/health")
 def health():
-    return {"ok": True}
+    return {"ok": True, "version": VERSION}
 
 
 @app.get("/api/status")
@@ -354,7 +355,8 @@ def update():
         con = db.connect(s.db_path)
         n = import_snapshots(con, s.snapshots_dir)
         con.close()
-        return ok({"imported": n, "results_newer": sync.status(s)["results_newer"]})
+        return ok({"imported": n, "results_newer": sync.status(s)["results_newer"],
+                   "new_version": sync.code_version() != VERSION})
     finally:
         _lock.release()
 
